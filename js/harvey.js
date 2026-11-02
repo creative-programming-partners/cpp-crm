@@ -9,7 +9,7 @@
 if (typeof VIEWS === "undefined" || typeof NAV === "undefined") return;
 
 /* ================= constants ================= */
-const HV_CAND = "hv_candidates", HV_CFG = "hv_config";
+const HV_CAND = "hv_candidates", HV_CFG = "hv_config", HV_OUT = "hv_outbox", HV_AGENT = "hv_agent";
 const CASE_URL = "https://bahia-de-cuba.github.io/Bahia-Cuba-Landing-Page/";
 const CASE_TPL_ID = "tpl-hv-bahia";
 // Rubro del CRM -> etiquetas de OpenStreetMap que de verdad llevan esos negocios. Sin comodín:
@@ -53,9 +53,11 @@ const PLACES = [
 ];
 const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 const DEF = { minRating: 4.2, revMin: 15, revMax: 400, rubros: ["Dentista", "Clínica / centro médico", "Veterinaria", "Estética / spa / salón", "Hotel", "Restaurante", "Cafetería", "Inmobiliaria"] };
-const TABS = [["hoy", "Hoy"], ["buscar", "Buscar negocios"], ["candidatos", "Candidatos"], ["ideal", "Cliente ideal"]];
+const TABS = [["hoy", "Hoy"], ["buscar", "Buscar negocios"], ["candidatos", "Candidatos"], ["correos", "Correos"], ["ideal", "Cliente ideal"]];
+const OUT_ST = [["por_aprobar", "Por aprobar"], ["aprobado", "Esperan envío"], ["enviado", "Enviados"], ["otros", "Descartados y errores"]];
+const KIND = { primer: "Primer correo", seguimiento: "Seguimiento", respuesta: "Respuesta a su correo" };
 const CAND_ST = [["revisar", "Por revisar"], ["aprobado", "En el CRM"], ["descartado", "Descartados"]];
-const CASE_BODY = "Buenos días. Le escribe {mi_nombre}, de CPP (Creative Programming Partners).\n\nEncontré {negocio} en Google Maps y vi que todavía no tiene una página propia. Para un negocio como el suyo, la página puede {idea}.\n\nHace poco hicimos la página y el sistema de reservas del Hotel Bahía de Cuba, en Huarmey: sus huéspedes ven las habitaciones, cotizan y reservan en línea. Puede verla aquí: " + CASE_URL + "\n\n¿Le parece si le preparo una idea de cómo se vería la de {negocio}? Es sin compromiso.";
+const CASE_BODY = "Buenos días, {negocio}. Les escribe {mi_nombre}, de CPP — Creative Programming Partners, estudio de desarrollo web en Lima.\n\nEncontré {negocio} en Google Maps y vi que todavía no tiene una página propia. Para un negocio como el suyo, la página puede {idea}.\n\nHace poco hicimos la página y el sistema de reservas del Hotel Bahía de Cuba, en Huarmey: sus huéspedes ven las habitaciones, cotizan y reservan en línea. Puede verla aquí: " + CASE_URL + "\n\n¿Les parece si les preparo una idea de cómo se vería la de {negocio}? Sin costo ni compromiso.";
 
 I.radar = '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12l5.5-5.5"/>';
 I.star = '<path d="m12 4 2.4 5 5.4.7-4 3.8 1 5.4L12 16.3 7.2 18.9l1-5.4-4-3.8 5.4-.7z"/>';
@@ -64,7 +66,8 @@ NAV.push({ id: "harvey", l: "Harvey", i: "radar" });
 /* ================= state ================= */
 const H = { tab: store.get("crm.hv.tab", "hoy"), subs: false, cands: new Map(), candsReady: false, cfg: null,
   place: store.get("crm.hv.place", "lima-miraflores"), custom: "", rubro: store.get("crm.hv.rubro", "Dentista"), km: "",
-  busy: false, err: "", results: null, meta: null, cSt: "revisar", cRubro: "", cCity: "", work: new Set() };
+  busy: false, err: "", results: null, meta: null, cSt: "revisar", cRubro: "", cCity: "", work: new Set(),
+  out: new Map(), outReady: false, agent: null, oSt: "por_aprobar", drafts: new Map() };
 if (!TABS.some(t => t[0] === H.tab)) H.tab = "hoy";
 const cfg = () => ({ ...DEF, ...(H.cfg || {}) });
 
@@ -75,6 +78,11 @@ function subscribe() {
     H.cands = m; H.candsReady = true; if (S.view === "harvey") scheduleRender();
   }, () => { H.candsReady = true; if (S.view === "harvey") scheduleRender(); });
   S.db.collection(HV_CFG).onSnapshot(snap => { const d = snap.docs.find(x => x.id === "icp"); H.cfg = d ? d.data() : null; if (S.view === "harvey") scheduleRender(); }, () => {});
+  S.db.collection(HV_OUT).onSnapshot(snap => {
+    const m = new Map(); snap.docs.forEach(d => { const x = d.data(); if (x) m.set(d.id, { ...x, id: d.id }); });
+    H.out = m; H.outReady = true; if (S.view === "harvey") scheduleRender();
+  }, () => { H.outReady = true; if (S.view === "harvey") scheduleRender(); });
+  S.db.collection(HV_AGENT).onSnapshot(snap => { const d = snap.docs.find(x => x.id === "status"); H.agent = d ? d.data() : null; if (S.view === "harvey") scheduleRender(); }, () => {});
 }
 const waitDb = setInterval(() => { if (S.db) { clearInterval(waitDb); subscribe(); } }, 700);
 
@@ -286,6 +294,21 @@ css.textContent = `
 .hv-chk{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px}
 .hv-chk label{display:flex;align-items:center;gap:8px;font-size:13px}
 .hv-pre{white-space:pre-wrap;background:var(--surface-2);border-radius:var(--r-sm);padding:12px 14px;font-size:13px;margin:0 0 12px}
+.hv-agent{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.hv-agent b{display:block;font-size:15px;margin-top:2px;overflow-wrap:break-word}
+.hv-agent small{display:block;color:var(--text-3);font-size:12px}
+@media (max-width:860px){.hv-agent{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.hv-mail{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;display:flex;flex-direction:column}
+.hv-mail-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:6px 14px;margin-bottom:10px}
+.hv-mail-h>div{flex:1;min-width:220px}
+.hv-mail .nm{font-weight:650;font-size:15px;padding:0}
+.hv-mail .sub{color:var(--text-3);font-size:12.5px;overflow-wrap:anywhere}
+.hv-mail textarea{resize:vertical;line-height:1.5}
+.hv-quote{background:var(--surface-2);border-left:3px solid var(--st-respondio);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:10px;white-space:pre-wrap;font-size:13px}
+.hv-quote .lbl{display:block;margin-bottom:4px}
+.hv-whyd{margin-top:8px;font-size:12.5px;color:var(--text-3)}
+.hv-whyd summary{cursor:pointer}
+.hv-whyd ul{margin:6px 0 0;padding-left:18px}
 table.t tr[data-hv-open]{cursor:pointer}
 table.t tr[data-hv-open]:hover td{background:var(--surface-2)}`;
 document.head.appendChild(css);
@@ -305,9 +328,11 @@ function hoyHTML() {
   const hot = pend.filter(l => channel(l) === "wa" && (!l.owner || l.owner === S.me.id) && leadScore(l).level === "alto");
   const waLeft = pend.filter(l => channel(l) === "wa").length;
   const review = cands.filter(c => c.status === "revisar");
+  const mails = [...H.out.values()].filter(o => o.status === "por_aprobar"), mailReplies = mails.filter(o => o.kind === "respuesta");
   // Same fixed order as Harvey: answer replies > follow-ups > contact > review new > find more.
   const steps = [];
   if (replies.length) steps.push([replies.length, replies.length === 1 ? "negocio respondió y espera respuesta" : "negocios respondieron y esperan respuesta", "Contestar rápido es lo que más clientes cierra.", "Ver", "stage:respondio"]);
+  if (mails.length) steps.push([mails.length, mails.length === 1 ? "correo espera tu aprobación" : "correos esperan tu aprobación", mailReplies.length ? `${mailReplies.length} ${mailReplies.length === 1 ? "es respuesta" : "son respuestas"} a negocios que escribieron.` : "Claude los redactó; revísalos y apruébalos para que salgan.", "Revisar correos", "tab:correos"]);
   if (overdue.length) steps.push([overdue.length, overdue.length === 1 ? "seguimiento vencido" : "seguimientos vencidos", "Quedaste en escribirles y ya pasó la fecha.", "Seguimientos", "go:seguimientos"]);
   if (hot.length) steps.push([hot.length, hot.length === 1 ? "negocio con potencial alto sin contactar" : "negocios con potencial alto sin contactar", "Tienen WhatsApp y son de los rubros que más ganan con una web.", "Contacto rápido", "go:rapido"]);
   if (review.length) steps.push([review.length, review.length === 1 ? "candidato encontrado por Harvey espera revisión" : "candidatos encontrados por Harvey esperan revisión", "Revisa sus estrellas en Maps y pasa los buenos al CRM.", "Revisar", "tab:candidatos"]);
@@ -397,6 +422,57 @@ function candidatosHTML() {
   if (!all.length) return h + `<div class="empty">${ic("radar", 28)}<h3>Todavía no hay candidatos</h3><p>Busca negocios por rubro y distrito, guarda los que te interesen y aquí los revisas con tu compañero antes de contactarlos.</p><div class="ph-act"><button class="btn primary" data-hv-do="tab:buscar">${ic("search")} Buscar negocios</button></div></div>`;
   return h + (list.length ? `<section class="list-card">${list.slice(0, 150).map(candRow).join("")}</section>${list.length > 150 ? `<p class="hint">Se muestran 150 de ${list.length}. Filtra por rubro o ciudad para ver el resto.</p>` : ""}` : `<div class="empty">${ic("check", 28)}<h3>Nada en esta lista</h3><p>Cambia el filtro o busca más negocios.</p></div>`);
 }
+const outGroup = o => ["por_aprobar", "aprobado", "enviado"].includes(o.status) ? o.status : "otros";
+function agentHTML() {
+  const a = H.agent;
+  if (!a || !a.lastRun) return `<section class="panel" style="margin-bottom:16px"><div class="panel-h"><h2>Agente de correo</h2><span class="chip plain">Apagado</span></div>
+    <p class="hint" style="margin:0">Todavía no se ha encendido. Corre en una computadora del equipo y usa la suscripción de Claude para redactar: <code>python agente/harvey_cpp.py</code>. Los pasos están en <code>agente/LEEME.md</code>. Nada sale sin que alguien lo apruebe aquí.</p></section>`;
+  const mins = (Date.now() - Date.parse(a.lastRun)) / 60000; const live = mins < 25;
+  return `<section class="panel" style="margin-bottom:16px"><div class="panel-h"><h2>Agente de correo</h2><span class="chip" style="--c:var(${live ? (a.ok ? "--ok" : "--warn") : "--text-3"})">${live ? (a.ok ? "Encendido" : "Encendido, con un error") : "Sin señal"}</span></div>
+    <div class="hv-agent"><div><span class="lbl">Envía desde</span><b>${esc(a.mailbox || "—")}</b><small>firma ${esc(a.sender || "")}</small></div>
+      <div><span class="lbl">Enviados hoy</span><b>${esc(a.sentToday ?? 0)} de ${esc(a.dailyLimit ?? "—")}</b><small>${esc(a.window || "")}${a.inWindow === false ? " · ahora fuera de horario" : ""}</small></div>
+      <div><span class="lbl">Claude hoy</span><b>${esc(a.claudeToday ?? 0)} de ${esc(a.claudeLimit ?? "—")}</b><small>redacciones con la suscripción</small></div>
+      <div><span class="lbl">Último ciclo</span><b>${esc(rel(a.lastRun))}</b><small>${live ? "revisa cada pocos minutos" : "¿está apagada la computadora?"}</small></div></div>
+    ${a.error ? `<div class="banner bad" style="margin:12px 0 0">${ic("alert", 18)}<div>${esc(a.error)}</div></div>` : ""}
+    ${(a.last || []).length ? `<p class="hint" style="margin:10px 0 0">${(a.last || []).slice(-4).map(esc).join(" · ")}</p>` : ""}</section>`;
+}
+function mailCard(o) {
+  const d = H.drafts.get(o.id) || {}; const edit = o.status === "por_aprobar" || o.status === "error";
+  const subj = d.subject ?? o.subject ?? "", body = d.body ?? o.body ?? ""; const lead = S.leads.get(o.leadId);
+  const legal = o.kind !== "respuesta" ? `<p class="hint" style="margin:6px 0 0">Al enviarlo se agrega «PUBLICIDAD:» al asunto (Ley 28493), la firma de CPP y cómo darse de baja.</p>` : "";
+  const when = o.status === "enviado" ? `Enviado ${esc(rel(o.sentAt))}${o.approvedBy ? ` · aprobó ${esc(firstName(o.approvedBy))}` : ""}` : o.status === "aprobado" ? `Aprobado ${esc(rel(o.approvedAt))} por ${esc(firstName(o.approvedBy))} · sale en el próximo ciclo dentro del horario` : `Redactado ${esc(rel(o.createdAt))}`;
+  const acts = o.status === "por_aprobar" ? `<button class="btn sm ghost" data-hv-odrop="${esc(o.id)}">Descartar</button><button class="btn sm" data-hv-osave="${esc(o.id)}">Guardar cambios</button><button class="btn sm primary" data-hv-oapprove="${esc(o.id)}">${ic("check", 14)} Aprobar envío</button>`
+    : o.status === "aprobado" ? `<button class="btn sm" data-hv-oback="${esc(o.id)}">Volver a borrador</button>`
+    : o.status === "error" ? `<button class="btn sm ghost" data-hv-odrop="${esc(o.id)}">Descartar</button><button class="btn sm primary" data-hv-oapprove="${esc(o.id)}">Reintentar envío</button>`
+    : o.status === "descartado" ? `<button class="btn sm" data-hv-oback="${esc(o.id)}">Recuperar</button>` : "";
+  return `<article class="hv-mail"><div class="hv-mail-h"><div><button class="linkish nm" data-hv-lead="${esc(o.leadId || "")}"${lead ? "" : " disabled"}>${esc(o.leadName || "Contacto")}</button>
+      <div class="sub">Para <span class="mono">${esc(o.to || "")}</span> · ${esc(KIND[o.kind] || o.kind || "")}${lead ? ` · ${stChip(lead.stage)}` : ""}</div></div><span class="sub">${when}</span></div>
+    ${o.kind === "respuesta" && o.theirReply ? `<div class="hv-quote"><span class="lbl">Lo que respondió${o.summary ? ` — ${esc(o.summary)}` : ""}</span>${esc(o.theirReply.slice(0, 900))}</div>` : ""}
+    ${o.status === "error" && o.error ? `<div class="banner bad" style="margin:0 0 10px">${ic("alert", 18)}<div>${esc(o.error)}</div></div>` : ""}
+    <label class="lbl" for="hv-os-${esc(o.id)}">Asunto</label><input id="hv-os-${esc(o.id)}" class="inp" data-hv-osubj="${esc(o.id)}" value="${esc(subj)}"${edit ? "" : " readonly"}>
+    <label class="lbl" for="hv-ob-${esc(o.id)}" style="margin-top:8px">Mensaje</label><textarea id="hv-ob-${esc(o.id)}" class="inp" rows="${Math.min(14, Math.max(6, body.split("\n").length + 2))}" data-hv-obody="${esc(o.id)}"${edit ? "" : " readonly"}>${esc(body)}</textarea>${legal}
+    ${(o.why || []).length ? `<details class="hv-whyd"><summary>Por qué Claude lo escribió así</summary><ul>${o.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></details>` : ""}
+    ${acts ? `<div class="hv-acts" style="margin-top:10px">${acts}</div>` : ""}</article>`;
+}
+function correosHTML() {
+  if (!H.outReady) return loadingHTML();
+  const all = [...H.out.values()]; const by = Object.fromEntries(OUT_ST.map(s => [s[0], 0])); all.forEach(o => by[outGroup(o)]++);
+  const withMail = [...S.leads.values()].filter(l => l.stage === "nuevo" && /^\S+@\S+\.\S+$/.test(String(l.email || "").trim()) && !l.noContactar);
+  const waiting = withMail.filter(l => !all.some(o => o.leadId === l.id)).length;
+  const list = all.filter(o => outGroup(o) === H.oSt).sort((a, b) => H.oSt === "enviado" ? String(b.sentAt || "").localeCompare(String(a.sentAt || "")) : (a.kind === "respuesta" ? -1 : 0) - (b.kind === "respuesta" ? -1 : 0) || String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  let h = agentHTML();
+  h += `<div class="toolbar"><div class="seg" role="group" aria-label="Estado">${OUT_ST.map(s => `<button data-hv-ost="${s[0]}" class="${H.oSt === s[0] ? "on" : ""}">${esc(s[1])} (${by[s[0]]})</button>`).join("")}</div>
+    <span class="hint" style="margin:0">${waiting} ${waiting === 1 ? "contacto nuevo con correo espera" : "contactos nuevos con correo esperan"} su primer correo</span></div>`;
+  if (!list.length) return h + `<div class="empty">${ic("mail", 28)}<h3>${H.oSt === "por_aprobar" ? "No hay correos por aprobar" : "Nada en esta lista"}</h3><p>El agente escribe a los contactos <b>Por contactar</b> que tienen correo. Los correos se anotan en la ficha, llegan con el Excel de Mailerfind o el agente los encuentra en la web del negocio.</p></div>`;
+  return h + list.slice(0, 60).map(mailCard).join("");
+}
+async function saveOut(id, extra) {
+  const o = H.out.get(id); if (!o || !guardWrite()) return false; const d = H.drafts.get(id) || {};
+  const subject = (d.subject ?? o.subject ?? "").trim(), body = (d.body ?? o.body ?? "").trim();
+  if (extra && extra.status === "aprobado" && (!subject || !body)) { toast("El correo necesita asunto y mensaje.", "bad"); return false; }
+  try { await withRetry(() => S.db.doc(HV_OUT + "/" + id).update({ subject, body, ...(extra || {}), updatedAt: nowISO(), updatedBy: S.me.id || null })); H.drafts.delete(id); return true; }
+  catch (e) { handleWriteError(e); return false; }
+}
 function idealHTML() {
   const k = cfg(); const by = H.cfg && H.cfg.updatedBy ? ` · lo cambió ${esc(firstName(H.cfg.updatedBy))} ${esc(rel(H.cfg.updatedAt))}` : "";
   const ex = { name: "Clínica Dental Sonrisa", category: "Dentista", city: "Lima", contactName: "" };
@@ -448,6 +524,11 @@ VIEWS.harvey = {
         try { await withRetry(() => S.db.doc(HV_CFG + "/icp").set({ minRating, revMin, revMax, rubros, updatedAt: nowISO(), updatedBy: S.me.id || null })); toast("Cliente ideal guardado. Los puntajes ya se recalcularon.", "ok"); } catch (err) { handleWriteError(err); }
         return;
       }
+      if (d.hvOst) { H.oSt = d.hvOst; renderView(); return; }
+      if (d.hvOsave) { b.disabled = true; if (await saveOut(d.hvOsave)) toast("Cambios guardados", "ok"); else b.disabled = false; return; }
+      if (d.hvOapprove) { b.disabled = true; if (await saveOut(d.hvOapprove, { status: "aprobado", approvedBy: S.me.id || null, approvedAt: nowISO(), error: "" })) toast("Aprobado. El agente lo envía en su próximo ciclo.", "ok"); else b.disabled = false; return; }
+      if (d.hvOback) { if (await saveOut(d.hvOback, { status: "por_aprobar", approvedBy: null, approvedAt: null })) toast("Volvió a borrador", "ok"); return; }
+      if (d.hvOdrop) { if (await saveOut(d.hvOdrop, { status: "descartado" })) toast("Correo descartado", "ok"); return; }
       if ("hvCopycase" in d) { copyText(CASE_BODY, "Plantilla copiada"); return; }
       if ("hvAddtpl" in d) { b.disabled = true; await addCaseTemplate(); scheduleRender(); return; }
     });
@@ -464,6 +545,10 @@ VIEWS.harvey = {
         await patchCand(id, { [field]: v });
       }
     });
+    root.addEventListener("input", e => {
+      const x = e.target, id = x.dataset.hvOsubj || x.dataset.hvObody;
+      if (id) { const d = H.drafts.get(id) || {}; d[x.dataset.hvOsubj ? "subject" : "body"] = x.value; H.drafts.set(id, d); }
+    });
     root.addEventListener("input", e => { if (e.target.id === "hv-custom") H.custom = e.target.value; else if (e.target.id === "hv-km") H.km = e.target.value; });
     root.addEventListener("keydown", e => { if (e.key === "Enter" && (e.target.id === "hv-custom" || e.target.id === "hv-km")) { e.preventDefault(); H.custom = (root.querySelector("#hv-custom") || {}).value || H.custom; search(); } });
   },
@@ -472,8 +557,10 @@ VIEWS.harvey = {
     const n = [...H.cands.values()].filter(c => (c.status || "revisar") === "revisar").length;
     $$("[data-hv-tab]").forEach(b => { const on = b.dataset.hvTab === H.tab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false"); });
     const badge = $('[data-hv-n="candidatos"]'); if (badge) badge.textContent = n ? ` (${n})` : "";
+    const m = [...H.out.values()].filter(o => o.status === "por_aprobar").length;
+    const mb = $('[data-hv-n="correos"]'); if (mb) mb.textContent = m ? ` (${m})` : "";
   },
-  update(b) { b.innerHTML = H.tab === "buscar" ? buscarHTML() : H.tab === "candidatos" ? candidatosHTML() : H.tab === "ideal" ? idealHTML() : hoyHTML(); }
+  update(b) { b.innerHTML = H.tab === "buscar" ? buscarHTML() : H.tab === "candidatos" ? candidatosHTML() : H.tab === "correos" ? correosHTML() : H.tab === "ideal" ? idealHTML() : hoyHTML(); }
 };
 
 // Si el menú ya se dibujó antes de cargar este archivo, agrega el botón a mano.

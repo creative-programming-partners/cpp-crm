@@ -53,6 +53,8 @@ Abre `http://localhost:8766/test.html` e inicia sesión con `darnell@test.com` /
 - **Candidatos:** se anotan las estrellas y las reseñas de Google Maps y el puntaje (0–100) se recalcula con sus razones. Los buenos pasan al CRM como contacto nuevo, con prioridad y notas; los demás se descartan y no vuelven a aparecer.
 - **Cliente ideal:** estrellas mínimas, rango de reseñas y rubros prioritarios, compartidos por todo el equipo. Incluye la plantilla con el caso de éxito del Hotel Bahía de Cuba, que se puede agregar a Plantillas con un botón.
 
+- **Correos:** la bandeja del agente de correo (`agente/`), que redacta con la suscripción de Claude y envía desde el correo de CPP solo lo que alguien aprobó aquí. Instalación en [`agente/LEEME.md`](agente/LEEME.md).
+
 OpenStreetMap no tiene todos los negocios ni trae reseñas: por eso las estrellas se anotan a mano después de ver el negocio en Maps.
 
 ## Respaldo
