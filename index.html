@@ -393,6 +393,27 @@ body.dw-open{overflow:hidden}
 .online .stack .av{width:22px;height:22px;font-size:9px;border:2px solid var(--surface);margin-left:-6px}
 .online .stack .av:first-child{margin-left:0}
 @media (max-width:900px){.online span.t{display:none}}
+/* ---------- potential & quick contact ---------- */
+.pot-alto{--c:var(--ok)} .pot-medio{--c:var(--warn)} .pot-bajo{--c:var(--st-descartado)}
+.qr-count{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-bottom:14px;font-size:13px}
+.qr-count .bar{width:160px;height:8px}
+.qr-wrap{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;align-items:start}
+@media (max-width:1000px){.qr-wrap{grid-template-columns:minmax(0,1fr)}}
+.qr{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.qr h2{margin:8px 0 4px;font-size:21px;letter-spacing:-.015em;line-height:1.25;font-weight:650;text-wrap:balance}
+.qr .why{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.qr .why .chip{--c:var(--text-3)}
+.qr-tpls{display:flex;flex-wrap:wrap;gap:6px}
+.qr-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.qr-actions .sp{flex:1}
+.qr-side{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.qr-side-h{margin:2px 4px 4px;font-size:13px;font-weight:650}
+.qr-next{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:var(--r-sm);padding:8px 10px;cursor:pointer;color:var(--text);min-width:0}
+.qr-next:hover{border-color:var(--line-hi)}
+.qr-next span{display:flex;flex-direction:column;min-width:0;max-width:100%}
+.qr-next b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr-next small{color:var(--text-3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qr-discard{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface-2)}
 </style>
 </head>
 <body>
@@ -420,7 +441,7 @@ const PRIOS=[["alta","Alta"],["media","Media"],["baja","Baja"]];
 const CH={wa:"WhatsApp",fijo:"Teléfono fijo",none:"Sin teléfono"};
 const ACT={whatsapp:{l:"WhatsApp",i:"wa"},llamada:{l:"Llamada",i:"phone"},reunion:{l:"Reunión",i:"meet"},propuesta:{l:"Propuesta",i:"file"},email:{l:"Correo",i:"mail"},nota:{l:"Nota",i:"note"},estado:{l:"Cambio de etapa",i:"swap"},asignacion:{l:"Asignación",i:"user"},creado:{l:"Contacto creado",i:"plus"},importacion:{l:"Importación",i:"up"},eliminado:{l:"Contacto eliminado",i:"trash"}};
 const LEAD_CAP=5000, PAGE=50, COL_CAP=40;
-const NAV=[{id:"resumen",l:"Resumen",i:"grid"},{id:"contactos",l:"Contactos",i:"list"},{id:"pipeline",l:"Pipeline",i:"kanban"},{id:"seguimientos",l:"Seguimientos",i:"cal"},{id:"plantillas",l:"Plantillas",i:"msg"}];
+const NAV=[{id:"resumen",l:"Resumen",i:"grid"},{id:"contactos",l:"Contactos",i:"list"},{id:"rapido",l:"Contacto rápido",i:"send"},{id:"pipeline",l:"Pipeline",i:"kanban"},{id:"seguimientos",l:"Seguimientos",i:"cal"},{id:"plantillas",l:"Plantillas",i:"msg"}];
 
 /* ================= utils ================= */
 const $=(s,r=document)=>r.querySelector(s);
@@ -478,6 +499,7 @@ meet:'<path d="M3.5 7h11v10h-11zM14.5 10.5l6-3v9l-6-3"/>',
 mail:'<path d="M3.5 5.5h17v13h-17z"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/>',
 chevL:'<path d="m14.5 6-6 6 6 6"/>',chevR:'<path d="m9.5 6 6 6-6 6"/>',
 flag:'<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+send:'<path d="M4 12 20 4l-5.5 16-3.5-7z"/><path d="m11 13 9-9"/>',
 coin:'<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2c-.5-.8-1.5-1.2-2.8-1.2-1.6 0-2.7.8-2.7 2s1 1.6 2.7 2c1.8.4 2.8 1 2.8 2.1s-1.1 2-2.8 2c-1.4 0-2.4-.5-2.9-1.4M12 6.5V8M12 16v1.5"/>'
 };
 const ic=(n,s=16)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]||""}</svg>`;
@@ -486,7 +508,7 @@ const ic=(n,s=16)=>`<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 2
 const S={db:null,user:null,dl:null,me:{id:null,name:"",avatarUrl:"",color:"",isOwner:false,canEdit:false},canWrite:null,readOnly:false,
   phase:"connecting",leads:new Map(),leadsReady:false,leadsCapped:false,acts:[],members:new Map(),templates:[],templatesReady:false,
   profiles:{},view:"resumen",sync:"connecting",pending:false,connSlow:false,
-  room:null,live:new Map(),online:[],waOpen:null,seenActs:null,bootAt:Date.now(),
+  room:null,live:new Map(),online:[],waOpen:null,qLead:null,qCur:null,qSkip:new Set(),qTpl:store.get("crm.qtpl",""),qCity:"",qCat:"",seenActs:null,bootAt:Date.now(),
   sel:new Set(),openId:null,leadActs:null,leadActsUnsub:null,dwDirty:new Set(),dwTimers:{},dwType:"whatsapp",
   dashScope:store.get("crm.dash","team"),fuScope:store.get("crm.fu","me")};
 const F=Object.assign({q:"",stage:"",city:"",cat:"",channel:"",owner:"",sort:"seq",dir:1,page:1},store.get("crm.filters",{}));
@@ -580,7 +602,27 @@ function toast(msg,kind,leadId){const el=document.createElement("div");el.classN
 function liveOn(id){return (S.live.get(id)||[])}
 function livePill(id){const arr=liveOn(id);if(!arr.length)return "";const wa=arr.find(x=>x.wa);const p=wa||arr[0];const names=[...new Set(arr.map(x=>firstName(x.by)))];const txt=wa?`${firstName(p.by)} le está escribiendo`:`${names.slice(0,2).join(" y ")}${names.length>2?` +${names.length-2}`:""} ${names.length>1?"están":"está"} aquí`;return `<span class="live${wa?" wa":""}" title="${esc(txt)} ahora">${avatar(p.by)}${esc(txt)}</span>`}
 function lastBy(l){if(!l.lastContactAt)return `<span class="muted">—</span>`;return `<div>${esc(rel(l.lastContactAt))}</div>${l.lastContactBy?`<div class="by">${avatar(l.lastContactBy)}${esc(l.lastContactBy===S.me.id?"tú":firstName(l.lastContactBy))}${l.lastContactType&&ACT[l.lastContactType]?` · ${esc(ACT[l.lastContactType].l)}`:""}</div>`:""}`}
-function setPresence(){if(!S.room)return;try{S.room.presence({uid:S.me.id||null,lead:S.openId||null,waLead:S.waOpen||null}).catch(()=>{})}catch(e){}}
+function setPresence(){if(!S.room)return;try{S.room.presence({uid:S.me.id||null,lead:S.openId||null,waLead:S.waOpen||S.qLead||null}).catch(()=>{})}catch(e){}}
+
+/* ================= potential: how likely a lead is to close ================= */
+const CAT_W=[[/dent|odont/,30],[/estetic|spa|salon|belleza|barber/,30],[/clinic|medic|psicolog/,28],[/veterin/,27],[/hotel|hostal/,26],[/inmobil/,25],[/restaur|cevich/,24],[/abogad|jurid/,22],[/contad|contable/,20],[/constru/,20],[/cafeter|cafe|coffee/,18],[/viaje|tour/,18],[/tienda|bodega|minimarket|grocery|abarrot/,4]];
+const GENERIC_NAME=/^(tienda|dentista|clinica|odontologia|consultorio dental|centro odontologico|mi tienda|la tiendita|la tienda|grocery store|cafeteria francesa|brackets|madrid|vega|saya|mana)$/;
+const scoreCache=new Map();
+function leadScore(l){
+  const key=[l.name,l.category,l.city,l.phone,l.notes].join("|");const hit=scoreCache.get(l.id);if(hit&&hit.key===key)return hit.v;
+  let s=0;const why=[];const ch=channel(l);const n=norm(l.name).trim();const c=norm(l.category);const city=norm(l.city);
+  if(ch==="wa"){s+=30;why.push("Tiene WhatsApp")}else if(ch==="fijo"){s+=10;why.push("Solo teléfono fijo")}else why.push("Sin teléfono");
+  let cw=12;for(const [re,w] of CAT_W)if(re.test(c)){cw=w;break}
+  s+=cw;if(cw>=24)why.push("Rubro que gana clientes con una web");else if(cw<=5)why.push("Negocio pequeño");
+  if(/clinica|centro|estudio|consultorio|spa|hotel|inmobiliaria|constructora|\bs\.?\s?a\.?\s?c\b|asociados|group|grupo|corp|medical|integral|especialidad/.test(n)){s+=12;why.push("Negocio establecido")}
+  if(GENERIC_NAME.test(n)||(n.split(/\s+/).length<2&&n.length<9)){s-=10;why.push("Nombre muy genérico")}
+  if(/lima/.test(city)){s+=10;why.push("Lima: el mercado más grande")}else if(/arequipa|trujillo/.test(city)){s+=8;why.push(`${l.city}: mercado grande`)}else if(city)s+=4;
+  if(/incompleto|equivocado/.test(norm(l.notes))){s-=25;why.push("Número dudoso")}
+  else if(/mismo numero/.test(norm(l.notes)))s-=5;
+  s=Math.max(0,Math.min(100,Math.round(s*100/82)));
+  const level=s>=88?"alto":s>=62?"medio":"bajo";const v={score:s,level,why};scoreCache.set(l.id,{key,v});return v;
+}
+function potChip(sc){return `<span class="chip pot-${sc.level}" title="Potencial ${sc.score}/100: ${esc(sc.why.join(", "))}">Potencial ${sc.level}</span>`}
 function onPeers(peers){
   const m=new Map(),online=new Set();
   for(const p of peers||[]){if(!p||p.kind!=="viewer")continue;const pr=p.presence||{};const by=p.by||(typeof pr.uid==="string"?pr.uid:null);if(!by||p.isMe||by===S.me.id)continue;online.add(by);
@@ -656,7 +698,7 @@ function emptyLeadsHTML(){return `<div class="empty">${ic("users",28)}<h3>Todav�
 
 /* ================= views ================= */
 const VIEWS={};
-function go(v){if(!VIEWS[v])v="resumen";S.view=v;try{history.replaceState(null,"","#"+v)}catch(e){}
+function go(v){if(!VIEWS[v])v="resumen";if(v!=="rapido"&&S.qLead){S.qLead=null;setPresence()}S.view=v;try{history.replaceState(null,"","#"+v)}catch(e){}
   $$(".nav-i").forEach(b=>{b.classList.toggle("on",b.dataset.nav===v);b.setAttribute("aria-current",b.dataset.nav===v?"page":"false")});
   const el=$("#view");el.innerHTML=VIEWS[v].mount();VIEWS[v].bind&&VIEWS[v].bind(el);deferred=false;renderView();window.scrollTo(0,0)}
 function renderView(){const v=VIEWS[S.view];const body=$("#vbody");if(!v||!body)return;
@@ -693,7 +735,7 @@ function filterLeads(useStage=true){const q=norm(F.q).trim();const words=q?q.spl
     if(F.owner){if(F.owner==="_me"){if(!S.me.id||l.owner!==S.me.id)return false}else if(F.owner==="_none"){if(l.owner)return false}else if(l.owner!==F.owner)return false}
     if(words.length){const hay=norm([l.name,l.category,l.city,l.notes,l.contactName,l.nextAction,l.email,l.social].join(" "));const okT=words.every(w=>hay.includes(w));const okP=qd.length>=3&&digits(l.phone).includes(qd);if(!okT&&!okP)return false}
     return true})}
-const SORTS={seq:l=>l.seq??1e9,name:l=>norm(l.name),city:l=>norm(l.city),stage:l=>ST[l.stage]?ST[l.stage].i:99,owner:l=>l.owner?norm(nameOf(l.owner)):"~",nextDate:l=>l.nextDate||"9999-99-99",lastContactAt:l=>l.lastContactAt||"",updatedAt:l=>l.updatedAt||""};
+const SORTS={score:l=>-leadScore(l).score,seq:l=>l.seq??1e9,name:l=>norm(l.name),city:l=>norm(l.city),stage:l=>ST[l.stage]?ST[l.stage].i:99,owner:l=>l.owner?norm(nameOf(l.owner)):"~",nextDate:l=>l.nextDate||"9999-99-99",lastContactAt:l=>l.lastContactAt||"",updatedAt:l=>l.updatedAt||""};
 function sortLeads(list){const fn=SORTS[F.sort]||SORTS.seq;const d=F.dir===-1?-1:1;return list.sort((a,b)=>{const x=fn(a),y=fn(b);if(x<y)return -d;if(x>y)return d;return (a.seq??0)-(b.seq??0)})}
 
 /* ---------- Resumen ---------- */
@@ -730,6 +772,8 @@ VIEWS.resumen={
     const al=[];
     if(overdue)al.push(`<div class="alert-row bad">${ic("clock",18)}<p><b>${overdue}</b> ${overdue===1?"seguimiento vencido":"seguimientos vencidos"}${mine?"":" en el equipo"}. Escríbeles hoy para no perder el interés.</p><button class="btn sm" data-go="seguimientos">Ver seguimientos</button></div>`);
     if(noNext)al.push(`<div class="alert-row">${ic("flag",18)}<p><b>${noNext}</b> ${noNext===1?"contacto en curso no tiene":"contactos en curso no tienen"} fecha de próximo paso.</p><button class="btn sm" data-go="seguimientos">Revisar</button></div>`);
+    const hot=all.filter(l=>l.stage==="nuevo"&&channel(l)==="wa"&&!l.lastContactAt&&(!l.owner||l.owner===S.me.id)&&leadScore(l).level==="alto").length;
+    if(hot)al.push(`<div class="alert-row">${ic("send",18)}<p><b>${hot}</b> ${hot===1?"negocio con potencial alto sigue":"negocios con potencial alto siguen"} sin contactar. Escríbeles primero.</p><button class="btn sm primary" data-go="rapido">Contacto rápido</button></div>`);
     if(!mine&&unassignedWA)al.push(`<div class="alert-row">${ic("users",18)}<p><b>${unassignedWA}</b> contactos con WhatsApp aún no tienen responsable.</p><button class="btn sm" data-act="go-unassigned">Repartir</button></div>`);
     if(al.length)h+=`<div class="alerts">${al.join("")}</div>`;
     // funnel
@@ -798,11 +842,12 @@ VIEWS.contactos={
       <button class="btn sm" data-act="bulk-export">${ic("down",14)} Exportar</button><button class="btn sm danger" data-act="bulk-delete" data-w>${ic("trash",14)} Eliminar</button>
       <button class="btn sm ghost" data-act="sel-none">Quitar selección</button>${list.length>S.sel.size?`<button class="btn sm ghost" data-act="sel-all">Seleccionar los ${list.length} filtrados</button>`:""}</div>`}
     if(!list.length){h+=`<div class="empty" style="border:0;border-radius:0">${ic("search",26)}<h3>Ningún contacto coincide</h3><p>Prueba con otra búsqueda o quita algún filtro.</p><div class="ph-act"><button class="btn" data-act="clear-f">Limpiar filtros</button></div></div></div>`;b.innerHTML=h;return}
-    h+=`<div class="tbl-wrap"><table class="lt"><thead><tr><th class="c-chk"><input type="checkbox" data-act="sel-page" aria-label="Seleccionar página" ${allPageSel?"checked":""}></th>${th("name","Negocio")}${th("city","Ciudad")}<th>Teléfono</th>${th("stage","Etapa")}${th("owner","Responsable")}${th("nextDate","Próximo seguimiento")}${th("lastContactAt","Último contacto")}<th></th></tr></thead><tbody>`;
+    h+=`<div class="tbl-wrap"><table class="lt"><thead><tr><th class="c-chk"><input type="checkbox" data-act="sel-page" aria-label="Seleccionar página" ${allPageSel?"checked":""}></th>${th("name","Negocio")}${th("score","Potencial")}${th("city","Ciudad")}<th>Teléfono</th>${th("stage","Etapa")}${th("owner","Responsable")}${th("nextDate","Próximo seguimiento")}${th("lastContactAt","Último contacto")}<th></th></tr></thead><tbody>`;
     for(const l of rows){const ch=channel(l);const late=l.nextDate&&l.nextDate<t&&!CLOSED.includes(l.stage);const tod=l.nextDate===t;
       h+=`<tr data-open="${esc(l.id)}" class="${S.sel.has(l.id)?"sel":""}">
         <td class="c-chk"><input type="checkbox" data-act="sel" data-id="${esc(l.id)}" ${S.sel.has(l.id)?"checked":""} aria-label="Seleccionar ${esc(l.name)}"></td>
         <td><div class="nm" title="${esc(l.name)}">${l.priority==="alta"?`<span class="prio alta" title="Prioridad alta" style="margin-right:6px;display:inline-block"></span>`:""}${esc(l.name)}</div><div class="sub">${esc(l.category||"Sin rubro")}</div>${livePill(l.id)?`<div style="margin-top:3px">${livePill(l.id)}</div>`:""}</td>
+        <td>${potChip(leadScore(l))}</td>
         <td>${esc(l.city||"—")}</td>
         <td>${l.phone?`<div class="mono num ph-num">${esc(l.phone)}</div><div class="ch ${ch==="wa"?"wa":""}">${ic(ch==="wa"?"wa":"phone",12)}${CH[ch]}</div>`:`<span class="ch">${ic("map",12)}Sin teléfono</span>`}</td>
         <td><select class="st-sel" data-act="row-stage" data-id="${esc(l.id)}" data-st="${esc(l.stage)}" aria-label="Etapa" data-w>${stageOpts(l.stage)}</select></td>
@@ -856,6 +901,67 @@ VIEWS.seguimientos={
 };
 
 /* ---------- Plantillas ---------- */
+/* ---------- Contacto rápido: best leads one by one, message ready, sent from the person's own WhatsApp ---------- */
+const Q_DAILY=25;
+function qrQueue(){const me=S.me.id;return [...S.leads.values()]
+  .filter(l=>l.stage==="nuevo"&&channel(l)==="wa"&&!l.lastContactAt&&(!l.owner||l.owner===me)&&!liveOn(l.id).length&&!S.qSkip.has(l.id)&&(!S.qCity||l.city===S.qCity)&&(!S.qCat||l.category===S.qCat))
+  .map(l=>({l,sc:leadScore(l)})).sort((a,b)=>b.sc.score-a.sc.score||(a.l.seq??0)-(b.l.seq??0))}
+function sentToday(){const t=todayStr();return S.acts.filter(a=>a.by&&a.by===S.me.id&&a.type==="whatsapp"&&todayStr(new Date(a.at))===t).length}
+function qrTplId(){return S.templates.some(t=>t.id===S.qTpl)?S.qTpl:(S.templates[0]&&S.templates[0].id)}
+function qrHref(){const l=S.leads.get(S.qCur),ta=$("#qr-text"),a=$("#qr-open");if(!l||!ta||!a)return;a.href=`https://wa.me/${normDigits(l.phone)}`+(ta.value.trim()?`?text=${encodeURIComponent(ta.value)}`:"")}
+function qrFill(){const l=S.leads.get(S.qCur),ta=$("#qr-text");if(!l||!ta)return;const tp=S.templates.find(t=>t.id===qrTplId());ta.value=tp?fillTpl(tp.body,l):"";ta.oninput=qrHref;qrHref();
+  $$(".qr-tpls .tpl-opt").forEach(b=>b.classList.toggle("on",b.dataset.id===qrTplId()))}
+function qrNext(){S.qCur=null;renderView();window.scrollTo(0,0)}
+VIEWS.rapido={
+  mount(){return `<header class="ph"><div><h1>Contacto rápido</h1><p>Los negocios con más potencial, uno por uno y con el mensaje listo. Tú lo revisas y lo envías desde tu WhatsApp.</p></div>
+    <div class="ph-act"><select id="qr-city" data-act="qr-city" aria-label="Ciudad"></select><select id="qr-cat" data-act="qr-cat" aria-label="Rubro"></select></div></header><div id="vbody"></div>`},
+  sync(){const L=[...S.leads.values()].filter(l=>l.stage==="nuevo"&&channel(l)==="wa"&&!l.lastContactAt);
+    fillSelect($("#qr-city"),[["","Todas las ciudades"],...uniqCount(L.map(l=>l.city)).map(([c,n])=>[c,`${c} (${n})`])],S.qCity);
+    fillSelect($("#qr-cat"),[["","Todos los rubros"],...uniqCount(L.map(l=>l.category)).map(([c,n])=>[c,`${c} (${n})`])],S.qCat)},
+  update(b){
+    const q=qrQueue();const done=sentToday();
+    const counter=`<div class="qr-count"><span><b class="num">${done}</b> ${done===1?"mensaje enviado":"mensajes enviados"} hoy</span><span class="bar" aria-hidden="true"><i style="width:${Math.min(100,done/Q_DAILY*100)}%;--c:${done>=Q_DAILY?"var(--warn)":"var(--ok)"}"></i></span><span class="muted">${done>=Q_DAILY?`Llegaste a ${Q_DAILY}: sigue mañana para que WhatsApp no te marque como spam.`:`Meta sana: hasta ${Q_DAILY} por día`}</span></div>`;
+    if(!S.templates.length){b.innerHTML=counter+`<div class="empty">${ic("msg",28)}<h3>Faltan plantillas</h3><p>Crea al menos una plantilla de mensaje para usar el contacto rápido.</p><div class="ph-act"><button class="btn" data-go="plantillas">Ir a plantillas</button></div></div>`;return}
+    if(!q.length){S.qCur=null;if(S.qLead){S.qLead=null;setPresence()}
+      b.innerHTML=counter+`<div class="empty">${ic("check",28)}<h3>No quedan negocios en la cola</h3><p>${S.qSkip.size?`Saltaste ${S.qSkip.size}. `:""}Los negocios con WhatsApp de este filtro ya fueron contactados o los está atendiendo otro compañero.</p><div class="ph-act">${S.qSkip.size?`<button class="btn" data-act="qr-reset">Ver los que salté</button>`:""}<button class="btn" data-go="seguimientos">Ir a seguimientos</button></div></div>`;return}
+    const cur=q.find(x=>x.l.id===S.qCur)||q[0];
+    const same=S.qCur===cur.l.id&&b.querySelector(`[data-qr="${CSS.escape(cur.l.id)}"]`);
+    S.qCur=cur.l.id;if(S.qLead!==cur.l.id){S.qLead=cur.l.id;setPresence()}
+    const rest=q.filter(x=>x.l.id!==cur.l.id);
+    const side=`<h3 class="qr-side-h">Siguientes</h3>${rest.slice(0,6).map(x=>`<button class="qr-next" data-act="qr-pick" data-id="${esc(x.l.id)}">${potChip(x.sc)}<span><b>${esc(shortName(x.l.name))}</b><small>${esc(x.l.category||"")} · ${esc(x.l.city||"")}</small></span></button>`).join("")}<p class="hint" style="margin:4px">${q.length} en la cola${S.qSkip.size?` · ${S.qSkip.size} saltados`:""}</p>`;
+    if(same){$("#qr-counter").innerHTML=counter;$("#qr-side").innerHTML=side;return}
+    const l=cur.l,sc=cur.sc;
+    b.innerHTML=`<div id="qr-counter">${counter}</div><div class="qr-wrap"><section class="qr" data-qr="${esc(l.id)}">
+      <div><div class="inline">${potChip(sc)}<span class="muted mono" style="font-size:11px">${sc.score}/100</span></div>
+        <h2>${esc(l.name)}</h2>
+        <div class="dw-sub" style="margin:0"><span>${esc(l.category||"Sin rubro")}</span><span>${esc(l.city||"")}</span><span class="mono">${esc(l.phone)}</span><a href="${esc(mapsHref(l))}" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a></div>
+        <div class="why">${sc.why.map(w=>`<span class="chip plain">${esc(w)}</span>`).join("")}</div></div>
+      <div><span class="lbl">Plantilla</span><div class="qr-tpls">${S.templates.map(t=>`<button class="tpl-opt" data-act="qr-tpl" data-id="${esc(t.id)}">${esc(t.name)}</button>`).join("")}</div></div>
+      <div><label class="lbl" for="qr-text">Mensaje (puedes editarlo antes de enviarlo)</label><textarea id="qr-text" class="inp" rows="12"></textarea></div>
+      <div class="qr-actions"><a class="btn primary" id="qr-open" data-act="qr-open" target="_blank" rel="noopener noreferrer">${ic("wa")} Abrir WhatsApp</a>
+        <button class="btn" data-act="qr-sent" data-w>${ic("check")} Ya lo envié · siguiente</button><span class="sp"></span>
+        <button class="btn ghost" data-act="qr-skip">Saltar</button><button class="btn ghost danger" data-act="qr-discard" data-w>No aplica</button><button class="btn ghost" data-open="${esc(l.id)}">Ver ficha</button></div>
+      <div class="qr-discard" id="qr-discard" hidden><span>¿Por qué no aplica?</span>${["Ya tiene página web","Número equivocado","Negocio cerrado","No es un negocio"].map(r=>`<button class="btn sm" data-act="qr-discard-ok" data-reason="${esc(r)}">${esc(r)}</button>`).join("")}<button class="btn sm ghost" data-act="qr-discard-no">Cancelar</button></div>
+      <p class="hint" style="margin:0">Al marcarlo como enviado, el negocio pasa a Contactado, queda a tu nombre y se agenda un seguimiento en 3 días. El resto del equipo ya no lo verá en su cola.</p>
+    </section><aside class="qr-side" id="qr-side">${side}</aside></div>`;
+    qrFill();
+  }
+};
+async function qrAction(act,el){
+  const id=S.qCur;const l=id&&S.leads.get(id);
+  if(act==="qr-pick"){S.qCur=el.dataset.id;renderView();window.scrollTo(0,0);return}
+  if(act==="qr-reset"){S.qSkip.clear();renderView();return}
+  if(act==="qr-tpl"){S.qTpl=el.dataset.id;store.set("crm.qtpl",S.qTpl);qrFill();return}
+  if(act==="qr-open"){qrHref();return}
+  if(!l)return;
+  if(act==="qr-skip"){S.qSkip.add(id);qrNext();return}
+  if(act==="qr-discard"){const box=$("#qr-discard");if(box)box.hidden=!box.hidden;return}
+  if(act==="qr-discard-no"){const box=$("#qr-discard");if(box)box.hidden=true;return}
+  if(act==="qr-discard-ok"){el.disabled=true;const reason=el.dataset.reason;const ok=await saveLead(id,{stage:"descartado",stageAt:nowISO(),lostReason:reason},{type:"estado",from:l.stage,to:"descartado",text:reason});if(ok){toast(`${shortName(l.name)}: descartado (${reason})`);qrNext()}else el.disabled=false;return}
+  if(act==="qr-sent"){el.disabled=true;const tp=S.templates.find(t=>t.id===qrTplId());
+    const ok=await logActivity(id,"whatsapp",`Mensaje enviado${tp?`: ${tp.name}`:""} (contacto rápido)`,{nextDate:addDays(todayStr(),3),nextAction:l.nextAction||"Hacer seguimiento por WhatsApp"});
+    if(ok){toast(`${shortName(l.name)} registrado · siguiente`,"ok");qrNext()}else el.disabled=false;return}
+}
 VIEWS.plantillas={
   needsLeads:false,
   mount(){return `<header class="ph"><div><h1>Plantillas de mensajes</h1><p>Mensajes listos para WhatsApp. Las variables se completan solas con los datos de cada negocio.</p></div><div class="ph-act"><button class="btn primary" data-act="tpl-new" data-w>${ic("plus")} Nueva plantilla</button></div></header><div id="vbody"></div>`},
@@ -1188,6 +1294,7 @@ document.addEventListener("click",async e=>{
   const t=e.target;
   const goB=t.closest("[data-go]");if(goB){go(goB.dataset.go);return}
   const actEl=t.closest("[data-act]");const act=actEl&&actEl.dataset.act;
+  if(act&&act.startsWith("qr-")&&act!=="qr-city"&&act!=="qr-cat"){qrAction(act,actEl);return}
   if(act==="close-dw"){closeLead();return}
   if(t.closest("#scrim")){closeLead();return}
   if(act==="import"){openImport();return}
@@ -1238,6 +1345,7 @@ document.addEventListener("click",async e=>{
 });
 document.addEventListener("change",async e=>{
   const t=e.target;const act=t.dataset&&t.dataset.act;
+  if(act==="qr-city"||act==="qr-cat"){S[act==="qr-city"?"qCity":"qCat"]=t.value;S.qCur=null;t.blur();renderView();return}
   if(act==="row-stage"){const id=t.dataset.id;const to=t.value;t.dataset.st=to;t.blur();const ok=await changeStage(id,to);if(!ok){const l=S.leads.get(id);if(l){t.value=l.stage;t.dataset.st=l.stage}}return}
   if(act==="bulk-owner"&&t.value){const v=t.value;t.value="";const ids=[...S.sel];if(v==="_split"){const team=teamIds();await runBulk(ids,(id,k)=>setOwner(id,team[k%team.length],true),"Repartiendo")}else await runBulk(ids,id=>setOwner(id,v==="_none"?null:v,true),"Asignando");S.sel.clear();renderView();return}
   if(act==="bulk-stage"&&t.value){const v=t.value;t.value="";const ids=[...S.sel];await runBulk(ids,id=>{const l=S.leads.get(id);return l&&l.stage===v?true:changeStage(id,v,true)},"Cambiando etapa");S.sel.clear();renderView();return}
