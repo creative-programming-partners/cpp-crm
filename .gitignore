@@ -5,3 +5,4 @@ test.html
 .claude/
 
 .vercel
+__pycache__/
