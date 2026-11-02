@@ -863,10 +863,32 @@ VIEWS.plantillas={
     if(S.phase==="noclaude"||S.phase==="nodb"){b.innerHTML=`<div class="empty">${ic("alert",28)}<h3>Plantillas no disponibles</h3><p>Recarga la página para ver las plantillas del equipo.</p></div>`;return}
     if(!S.templatesReady){b.innerHTML=loadingHTML();return}
     if(!S.templates.length){b.innerHTML=`<div class="empty">${ic("msg",28)}<h3>Aún no hay plantillas</h3><p>Crea el primer mensaje de presentación para que todo el equipo escriba con el mismo tono.</p><div class="ph-act"><button class="btn primary" data-act="tpl-new" data-w>${ic("plus")} Nueva plantilla</button></div></div>`;return}
-    b.innerHTML=`<p class="hint" style="margin:0 0 12px">Variables disponibles: ${["{negocio}","{rubro}","{ciudad}","{contacto}","{mi_nombre}"].map(v=>`<code class="var" style="cursor:default">${v}</code>`).join(" ")}</p><div class="tpls">${S.templates.map(tp=>`<article class="tpl"><h3>${esc(tp.name)}</h3><pre>${esc(tp.body)}</pre><div class="meta">${tp.updatedBy?`Editada por ${esc(firstName(tp.updatedBy))} · ${esc(rel(tp.updatedAt))}`:"Plantilla del equipo"}</div><div class="row"><button class="btn sm" data-act="tpl-edit" data-id="${esc(tp.id)}" data-w>${ic("edit",14)} Editar</button><button class="btn sm" data-act="tpl-copy" data-id="${esc(tp.id)}">${ic("copy",14)} Copiar</button><button class="btn sm ghost danger" data-act="tpl-del" data-id="${esc(tp.id)}" data-w>${ic("trash",14)}</button></div></article>`).join("")}</div>`;
+    b.innerHTML=`<p class="hint" style="margin:0 0 12px">Variables disponibles: ${TPL_VARS.map(v=>`<code class="var" style="cursor:default">{${v}}</code>`).join(" ")}. <b>{idea}</b> cambia según el rubro (por ejemplo, citas para dentistas o carta para restaurantes) y <b>{ejemplo}</b> pone el proyecto real de CPP más parecido.</p><div class="tpls">${S.templates.map(tp=>`<article class="tpl"><h3>${esc(tp.name)}</h3><pre>${esc(tp.body)}</pre><div class="meta">${tp.updatedBy?`Editada por ${esc(firstName(tp.updatedBy))} · ${esc(rel(tp.updatedAt))}`:"Plantilla del equipo"}</div><div class="row"><button class="btn sm" data-act="tpl-edit" data-id="${esc(tp.id)}" data-w>${ic("edit",14)} Editar</button><button class="btn sm" data-act="tpl-copy" data-id="${esc(tp.id)}">${ic("copy",14)} Copiar</button><button class="btn sm ghost danger" data-act="tpl-del" data-id="${esc(tp.id)}" data-w>${ic("trash",14)}</button></div></article>`).join("")}</div>`;
   }
 };
-function fillTpl(body,l){const first=(S.me.name||"").trim().split(/\s+/)[0];const map={negocio:shortName(l.name),rubro:String(l.category||"").toLowerCase(),ciudad:l.city||"",contacto:l.contactName||"",mi_nombre:first||"parte del equipo"};let out=String(body||"").replace(/\{(\w+)\}/g,(m,k)=>k in map?map[k]:m);out=out.replace(/(Hola|Buenos días|Buenas tardes)\s+,/g,"$1,").replace(/[ \t]{2,}/g," ");return out}
+/* What a website can do for each type of business ({idea}) and the closest real CPP project ({ejemplo}). */
+const IDEAS=[
+  [/dent|odont/,"mostrar sus tratamientos y horarios, y recibir citas directo por WhatsApp"],
+  [/clinic|médic|medic/,"mostrar sus especialidades y médicos, y recibir citas por WhatsApp"],
+  [/veterin/,"mostrar sus servicios (consultas, vacunas, baños) y recibir citas por WhatsApp"],
+  [/estétic|estetic|spa|salón|salon|belleza/,"mostrar sus tratamientos con fotos y precios, y agendar citas por WhatsApp"],
+  [/restaur/,"mostrar su carta con fotos y precios, y recibir reservas o pedidos por WhatsApp"],
+  [/cafeter|café|cafe/,"mostrar su carta, su ubicación y sus horarios, y recibir pedidos por WhatsApp"],
+  [/hotel|hostal/,"mostrar sus habitaciones y recibir reservas directas, sin pagar comisiones a terceros"],
+  [/viaje|tour/,"mostrar sus paquetes y tours, y recibir consultas y reservas por WhatsApp"],
+  [/abogad|juríd|jurid/,"explicar sus áreas de práctica y recibir consultas de nuevos clientes"],
+  [/contad|contable/,"presentar sus servicios y recibir consultas de empresas y emprendedores"],
+  [/inmobil/,"mostrar sus propiedades con fotos y recibir consultas de interesados"],
+  [/constru/,"mostrar sus obras terminadas y recibir pedidos de cotización"],
+  [/tienda|bodega|minimarket/,"mostrar sus productos en un catálogo y recibir pedidos por WhatsApp"]];
+function ideaFor(l){const c=norm(l.category);for(const [re,t] of IDEAS)if(re.test(c))return t;return "mostrar sus servicios y su ubicación, y recibir consultas directo por WhatsApp"}
+function ejemploFor(l){const c=norm(l.category);
+  if(/restaur|cafeter|cafe/.test(c))return "la web de Pachanka Restaurant, con su carta digital y reservas o delivery por WhatsApp, y la de Alma de Poeta";
+  if(/hotel|hostal|viaje|tour/.test(c))return "la web del Hotel Bahía de Cuba, que recibe reservas directas sin comisiones";
+  return "las webs del Hotel Bahía de Cuba, Pachanka Restaurant y Alma de Poeta"}
+const TPL_VARS=["negocio","rubro","ciudad","contacto","mi_nombre","idea","ejemplo"];
+function fillTpl(body,l){const first=(S.me.name||"").trim().split(/\s+/)[0];const map={negocio:shortName(l.name),rubro:String(l.category||"").toLowerCase(),ciudad:l.city||"",contacto:l.contactName||"",mi_nombre:first,idea:ideaFor(l),ejemplo:ejemploFor(l)};let out=String(body||"").replace(/\{(\w+)\}/g,(m,k)=>k in map?map[k]:m);
+  out=out.replace(/Soy\s*,\s*de /g,"Le escribo de ").replace(/Mi nombre es\s*,\s*de /g,"Le llamo de ").replace(/le escribe\s+de /g,"le escriben de ").replace(/(Hola|Buenos días|Buenas tardes)\s+,/g,"$1,").replace(/[ \t]{2,}/g," ");return out}
 
 /* ================= drawer ================= */
 function closeLeadSubs(){if(S.leadActsUnsub){try{S.leadActsUnsub()}catch(e){}S.leadActsUnsub=null}}
@@ -1047,7 +1069,7 @@ function openTplEditor(id){
   const m=openModal({title:tp?"Editar plantilla":"Nueva plantilla",wide:true,body:`
     <div><label class="lbl" for="tp-name">Nombre</label><input id="tp-name" class="inp" placeholder="Ej.: Primer contacto" autofocus></div>
     <div><label class="lbl" for="tp-body">Mensaje</label><textarea id="tp-body" class="inp" rows="9" placeholder="Hola, ¿qué tal? Soy {mi_nombre} de CPP…"></textarea>
-    <div class="inline" style="flex-wrap:wrap;margin-top:6px"><span class="hint" style="margin:0">Insertar:</span>${["negocio","rubro","ciudad","contacto","mi_nombre"].map(v=>`<button class="var" data-var="${v}">{${v}}</button>`).join("")}</div></div>
+    <div class="inline" style="flex-wrap:wrap;margin-top:6px"><span class="hint" style="margin:0">Insertar:</span>${TPL_VARS.map(v=>`<button class="var" data-var="${v}">{${v}}</button>`).join("")}</div></div>
     <div><span class="lbl">Vista previa con ${esc(shortName(sample.name))}</span><div class="preview" id="tp-prev"></div></div>`,
     foot:`<button class="btn" data-close>Cancelar</button><button class="btn primary" id="tp-save">${ic("check")} Guardar plantilla</button>`});
   const nm=$("#tp-name",m),bd=$("#tp-body",m),pv=$("#tp-prev",m);
