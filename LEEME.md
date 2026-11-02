@@ -45,5 +45,15 @@ python -m http.server 8766
 ```
 Abre `http://localhost:8766/test.html` e inicia sesión con `darnell@test.com` / `test1234` (base simulada en `tools/mock-supabase.js`; nada se guarda de verdad).
 
+## Harvey (sección aparte)
+`js/harvey.js` agrega la sección **Harvey** al menú, con ideas del agente de ventas de código abierto [Harvey](https://github.com/ethanplusai/harvey). No cambia nada del resto del CRM: guarda en sus propias colecciones (`hv_candidates` y `hv_config`, dentro de la misma tabla `docs`) y solo crea contactos cuando alguien pulsa **Pasar al CRM**.
+
+- **Hoy:** cuántos faltan contactar y cuántos ya se contactaron, en qué etapa está cada contactado, quién contacta y cómo va cada ciudad. Arriba, lo que toca ahora, siempre en el mismo orden: responder a los que contestaron, seguimientos vencidos, negocios de potencial alto sin contactar, candidatos por revisar y buscar más.
+- **Buscar negocios:** busca por rubro y distrito en OpenStreetMap (gratis, sin cuenta), marca los que ya están en el CRM y guarda los nuevos como candidatos.
+- **Candidatos:** se anotan las estrellas y las reseñas de Google Maps y el puntaje (0–100) se recalcula con sus razones. Los buenos pasan al CRM como contacto nuevo, con prioridad y notas; los demás se descartan y no vuelven a aparecer.
+- **Cliente ideal:** estrellas mínimas, rango de reseñas y rubros prioritarios, compartidos por todo el equipo. Incluye la plantilla con el caso de éxito del Hotel Bahía de Cuba, que se puede agregar a Plantillas con un botón.
+
+OpenStreetMap no tiene todos los negocios ni trae reseñas: por eso las estrellas se anotan a mano después de ver el negocio en Maps.
+
 ## Respaldo
 Desde **Contactos → Exportar** se descarga todo en Excel. Hazlo una vez por semana y guárdalo en Drive: es la copia de seguridad más simple.
