@@ -1,0 +1,14 @@
+{
+  "name": "CRM CPP",
+  "short_name": "CRM CPP",
+  "description": "Prospección de clientes de CPP: contactos, pipeline y seguimientos del equipo.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#050f17",
+  "theme_color": "#050f17",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
