@@ -70,9 +70,36 @@ Si más adelante le interesa, aquí puede ver nuestro trabajo y escribirnos cuan
 ]
 
 
+# Added later; loaded with supabase/4-respuesta-automatica.sql (only inserts, never overwrites).
+# Order 1.5 shows it right after "Primer contacto". {tipo}, {cliente}, {encargado} come from RUBRO_WORDS in index.html.
+EXTRA = [
+    ("tpl-07", "Respuesta a mensaje automático", 1.5, """¡Hola! Soy {mi_nombre}, de CPP 😊
+
+No escribo como {cliente}: tengo una propuesta para {negocio}. Hacemos páginas web para {tipo}, y la suya podría {idea}.
+
+¿Me podrían comunicar con {encargado}? Le preparo sin compromiso una idea de cómo se vería su página."""),
+]
+
+# Every template with its order, for the local test page.
+ALL = [(i, n, o, b) for o, (i, n, b) in enumerate(TEMPLATES, 1)] + EXTRA
+
+
 def e(x):
     return "E'" + x.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n") + "'"
 
+
+extra_rows = ",\n".join(f"('{i}',{e(n)},{o},{e(b)})" for i, n, o, b in EXTRA)
+extra_sql = f"""-- CRM CPP · Paso 4: plantilla "Respuesta a mensaje automático" (solo la agrega; no toca las demás)
+insert into public.docs (collection, id, data)
+select 'templates', t.id, jsonb_build_object('name', t.name, 'order', t.ord, 'body', t.body, 'updatedAt', now()::text, 'updatedBy', null)
+from (values
+{extra_rows}
+) as t(id, name, ord, body)
+on conflict (collection, id) do nothing;
+
+select id, data->>'name' as nombre, data->>'order' as orden from public.docs where collection = 'templates' order by (data->>'order')::numeric;
+"""
+(pathlib.Path(__file__).resolve().parent.parent / "supabase" / "4-respuesta-automatica.sql").write_text(extra_sql, encoding="utf-8")
 
 rows = ",\n".join(f"('{i}',{e(n)},{o},{e(b)})" for o, (i, n, b) in enumerate(TEMPLATES, 1))
 sql = f"""-- CRM CPP · Paso 3: plantillas de WhatsApp (reemplaza las del equipo por estas versiones)

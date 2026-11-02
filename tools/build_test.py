@@ -18,7 +18,7 @@ assert len(seed) == 467, len(seed)
 import importlib.util
 _spec = importlib.util.spec_from_file_location("plantillas", root / "tools" / "plantillas.py")
 _pl = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_pl)
-seed = [r for r in seed if r[0] != "templates"] + [["templates", i, {"name": n, "order": o, "body": b, "updatedAt": "2026-11-02T12:00:00Z", "updatedBy": None}] for o, (i, n, b) in enumerate(_pl.TEMPLATES, 1)]
+seed = [r for r in seed if r[0] != "templates"] + [["templates", i, {"name": n, "order": o, "body": b, "updatedAt": "2026-11-02T12:00:00Z", "updatedBy": None}] for i, n, o, b in _pl.ALL]
 mock = (root / "tools" / "mock-supabase.js").read_text(encoding="utf-8")
 cdn = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>'
 cfg = '<script src="js/config.js"></script>'
