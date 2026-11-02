@@ -29,10 +29,14 @@ Para quitar a alguien, borra su usuario en **Authentication → Users**.
 En la pantalla de inicio del CRM, **Olvidé mi contraseña** envía un enlace para crear una nueva.
 
 ## Publicar cambios
-```bash
-npx vercel@latest deploy --prod --yes --scope cpp12
-```
-Los archivos de `tools/`, `supabase/`, `test.html` y `LEEME.md` no se publican (ver `.vercelignore`).
+El código está en el repositorio privado <https://github.com/creative-programming-partners/cpp-crm>.
+Cada vez que se sube un cambio a la rama `main`, GitHub Actions (`.github/workflows/publicar.yml`) lo publica solo en Vercel. Se puede ver en la pestaña **Actions** del repositorio.
+
+- Usa el secreto `VERCEL_TOKEN` del repositorio (clave de Vercel `github-cpp-crm`, equipo CPP). Si la clave vence, crea otra en Vercel → Account Settings → Tokens y guárdala con `gh secret set VERCEL_TOKEN --repo creative-programming-partners/cpp-crm`.
+- Vercel no conecta el repositorio directamente porque, en el plan gratuito, no acepta repositorios privados de una organización; por eso se usa GitHub Actions.
+- Publicación manual de emergencia: `npx vercel@latest deploy --prod --yes --scope cpp12`.
+
+Los archivos de `tools/`, `supabase/`, `.github/`, `test.html` y `LEEME.md` no se publican (ver `.vercelignore`).
 
 ## Probar cambios sin tocar la base real
 ```bash
