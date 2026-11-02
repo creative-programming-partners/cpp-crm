@@ -12,11 +12,9 @@ create table if not exists public.team_invites (
 );
 alter table public.team_invites enable row level security;  -- solo se edita desde el SQL Editor
 
--- >>> EDITA AQUÍ: los correos del equipo (los mismos con los que crearás sus usuarios) <<<
+-- Administrador. Para agregar a alguien más, ver LEEME.md → "Agregar a alguien más al equipo".
 insert into public.team_invites (email, name, role) values
-  ('darnvll@gmail.com',        'Darnell',      'admin'),
-  ('CORREO_DE_JOSE@gmail.com', 'José Santana', 'member'),
-  ('CORREO_DE_JUAN@gmail.com', 'Juan Flores',  'member')
+  ('darnvll@gmail.com', 'Darnell', 'admin')
 on conflict (email) do update set name = excluded.name, role = excluded.role;
 
 -- ============================================================

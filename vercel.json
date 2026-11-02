@@ -10,7 +10,15 @@
       ]
     },
     {
-      "source": "/(index.html|js/(.*))",
+      "source": "/",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    {
+      "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    {
+      "source": "/js/:file*",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }
   ]
