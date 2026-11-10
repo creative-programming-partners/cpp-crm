@@ -887,6 +887,8 @@ class Agent:
             if tried.get(key, "") >= cutoff:
                 continue
             web = item.get("website") or (re.search(r"Web:\s*(https?://\S+)", str(item.get("notes", ""))) or [None, ""])[1]
+            if done:
+                time.sleep(random.uniform(8, 16))  # a ritmo de persona: el buscador frena las ráfagas
             done += 1
             tried[key] = today_lima()
             try:
