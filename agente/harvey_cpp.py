@@ -461,7 +461,7 @@ def overpass(query: str) -> dict:
         req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": query}).encode(), method="POST",
                                      headers={"User-Agent": "CPP-CRM/1 (prospección de negocios locales; cppcstudio.com)"})
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=240) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             last = e
@@ -486,7 +486,7 @@ def social_url(v: str, host: str) -> str:
 def discover(city: str, zone: str, lat: float, lng: float, km: float, rubro: str) -> list[dict]:
     r = int(km * 1000)
     clauses = "".join(f'nwr["{t.split("=")[0]}"="{t.split("=")[1]}"](around:{r},{lat},{lng});' for t in RUBROS[rubro])
-    data = overpass(f"[out:json][timeout:90];({clauses});out center tags 300;")
+    data = overpass(f"[out:json][timeout:180];({clauses});out center tags 300;")
     out, seen = [], set()
     for el in data.get("elements") or []:
         t = el.get("tags") or {}
@@ -523,6 +523,7 @@ PRICE = re.compile(r"(S/\s?\d|\$\s?\d|\d+\s?(soles|d[oó]lares|usd)\b)", re.I)
 
 def quality_problems(item: dict) -> list[str]:
     body, subj = item.get("body", ""), item.get("subject", "")
+    body = re.sub(r"https?://\S+|\S+\.(com|pe|io|net|org)\S*", " ", body)  # los enlaces no cuentan como jerga
     p = []
     if not subj.strip() or len(subj) > 90:
         p.append("asunto vacío o muy largo")
