@@ -122,6 +122,7 @@ class Config:
         self.prospect = env.get("BUSCAR_NEGOCIOS", "si").strip().lower() in ("si", "sí", "yes", "1", "true")
         self.new_per_day = int(env.get("NUEVOS_POR_DIA", "20"))
         self.min_score = int(env.get("UMBRAL_AUTOCONTACTO", "30"))
+        self.lookups_per_cycle = int(env.get("BUSQUEDAS_DE_CORREO_POR_CICLO", "6"))
 
     def missing(self) -> list[str]:
         need = {"CRM_EMAIL": self.crm_email, "CRM_PASSWORD": self.crm_password, "CORREO_CPP": self.mail_user,
@@ -368,6 +369,108 @@ def find_email_on_web(url: str) -> str:
         return ""
     same = [e for e in found if host and e.split("@")[1] in host]
     return (same or found)[0]
+
+
+# ---------------------------------------------------------------- buscar el correo en internet (como Harvey)
+# Harvey parte del dominio del negocio: lo busca, lee su web y sus fichas, y solo da por bueno un correo
+# que se puede comprobar. Aquí: buscador -> web oficial y directorios -> correos que corresponden al
+# nombre del negocio -> el dominio recibe correo (MX). Nunca se inventa una dirección.
+BROWSER = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+           "Accept-Language": "es-PE,es;q=0.9"}
+NO_SCRAPE = re.compile(r"(facebook|instagram|tiktok|youtube|twitter|x\.com|linkedin|google\.|wikipedia|tripadvisor|mercadolibre|duckduckgo)", re.I)
+ROLE_SKIP = re.compile(r"^(prensa|privacidad|proteccion|protecciondedatos|datospersonales|rrhh|empleo|trabajo|postula|webmaster|abuse|"
+                       r"soporte|support|noreply|no-reply|error|admin@wordpress)", re.I)
+GENERIC_WORDS = {"clinica", "dental", "dentista", "odontologia", "odontologico", "centro", "consultorio", "veterinaria", "veterinary",
+                 "clinic", "hotel", "hostal", "restaurante", "restaurant", "cafe", "cafeteria", "estudio", "contable", "abogados",
+                 "constructora", "inmobiliaria", "agencia", "viajes", "spa", "salon", "belleza", "medico", "medica", "lima", "peru",
+                 "trujillo", "arequipa", "cusco", "chiclayo", "piura", "tienda", "sac", "eirl", "srl", "del", "las", "los", "san", "santa"}
+
+
+class SearchBlocked(Exception):
+    """El buscador devolvió su página de bloqueo: hay que esperar, no insistir."""
+
+
+def http_get(url: str, limit: int = 400_000) -> str:
+    with urllib.request.urlopen(urllib.request.Request(url, headers=BROWSER), timeout=15) as r:
+        return r.read(limit).decode("utf-8", "replace")
+
+
+def name_tokens(name: str) -> list[str]:
+    return [t for t in re.findall(r"[a-z0-9]+", fold(name)) if len(t) >= 4 and t not in GENERIC_WORDS]
+
+
+def belongs_to(email: str, name: str, site_host: str = "") -> bool:
+    local, _, domain = email.partition("@")
+    if ROLE_SKIP.search(local):
+        return False
+    if site_host and domain in site_host:
+        return True
+    flat = re.sub(r"[^a-z0-9]", "", fold(local + domain.split(".")[0]))
+    return any(t in flat for t in name_tokens(name))
+
+
+_mx: dict[str, bool] = {}
+
+
+def has_mx(domain: str) -> bool:
+    if domain not in _mx:
+        try:
+            d = json.loads(http_get("https://dns.google/resolve?" + urllib.parse.urlencode({"name": domain, "type": "MX"}), 50_000))
+            _mx[domain] = any(a.get("type") == 15 for a in d.get("Answer") or [])
+        except Exception:
+            return False
+    return _mx[domain]
+
+
+def emails_in(text: str) -> list[str]:
+    out = []
+    for e in EMAIL_RE.findall(html.unescape(urllib.parse.unquote(text))):
+        e = e.strip(".").lower()
+        if not BAD_EMAIL.search(e) and e not in out:
+            out.append(e)
+    return out
+
+
+def web_search(query: str) -> tuple[list[str], list[str]]:
+    page = http_get("https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query, "kl": "pe-es"}))
+    if "error-lite" in page or "anomaly" in page.lower() and "result" not in page.lower():
+        raise SearchBlocked()
+    urls = []
+    for u in re.findall(r'uddg=([^&"]+)', page):
+        u = urllib.parse.unquote(u)
+        if u not in urls:
+            urls.append(u)
+    return urls, emails_in(re.sub(r"<[^>]+>", " ", page))
+
+
+def lookup_email(name: str, city: str, website: str = "") -> tuple[str, str]:
+    """(correo, dónde se encontró) o ("", "")."""
+    if website:
+        e = find_email_on_web(website)
+        host = urllib.parse.urlparse(website if "://" in website else "https://" + website).hostname or ""
+        if e and (belongs_to(e, name, host) or e.split("@")[1] in host) and has_mx(e.split("@")[1]):
+            return e, host
+    if not name_tokens(name):
+        return "", ""  # un nombre genérico ("Dentista", "Tienda") traería el correo de cualquiera
+    urls, found = web_search(f'"{name}" {city} correo')
+    pages = 0
+    sources = {e: "el buscador" for e in found}
+    for u in urls[:6]:
+        host = urllib.parse.urlparse(u).hostname or ""
+        if NO_SCRAPE.search(host) or pages >= 3:
+            continue
+        pages += 1
+        try:
+            for e in emails_in(http_get(u)):
+                sources.setdefault(e, host)
+                if belongs_to(e, name, host if name_tokens(name) and any(t in host for t in name_tokens(name)) else ""):
+                    found.append(e)
+        except Exception:
+            continue
+    for e in dict.fromkeys(found):
+        if belongs_to(e, name) and has_mx(e.split("@")[1]):
+            return e, sources.get(e, "internet")
+    return "", ""
 
 
 # ---------------------------------------------------------------- buscar negocios (OpenStreetMap, gratis)
@@ -744,25 +847,75 @@ class Agent:
             done += 1
             self.note(f"Primer correo escrito para {lead.get('name')}")
 
-    # 5. correos en la web (sin modelo)
+    # 5. conseguir correos: su web, o buscarlos en internet como Harvey (sin modelo)
     def find_emails(self) -> None:
-        tried = set(self.status.get("webTried") or [])
-        n = 0
-        for lid, lead in self.leads.items():
-            if n >= 10:
+        if self.status.get("searchPauseUntil", "") > now_iso():
+            return
+        tried = self.status.get("emailTried") or {}
+        cutoff = (dt.datetime.now(LIMA) - dt.timedelta(days=45)).strftime("%Y-%m-%d")
+        rubros = [r for r in (self.icp.get("rubros") or DEFAULT_RUBROS) if r in RUBROS] or DEFAULT_RUBROS
+        # Contactos del CRM sin correo (primero los de prioridad alta) y candidatos que el agente dejó por revisar.
+        queue = [("lead", lid, l) for lid, l in self.leads.items() if l.get("stage") == "nuevo" and not l.get("email")
+                 and not l.get("noContactar")]
+        queue.sort(key=lambda x: {"alta": 0, "media": 1, "baja": 2}.get(x[2].get("priority"), 1))
+        queue += [("cand", cid, c) for cid, c in self.cands.items() if c.get("status") == "revisar" and not c.get("email")]
+        found_n = done = 0
+        for kind, key, item in queue:
+            if done >= self.cfg.lookups_per_cycle:
                 break
-            if lead.get("email") or lid in tried or lead.get("stage") in ("perdido", "descartado"):
+            if tried.get(key, "") >= cutoff:
                 continue
-            m = re.search(r"Web:\s*(https?://\S+)", str(lead.get("notes", "")))
-            if not m:
+            web = item.get("website") or (re.search(r"Web:\s*(https?://\S+)", str(item.get("notes", ""))) or [None, ""])[1]
+            done += 1
+            tried[key] = today_lima()
+            try:
+                mail, src = lookup_email(item.get("name", ""), item.get("city", ""), web)
+            except SearchBlocked:
+                self.status["searchPauseUntil"] = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=45)).isoformat()
+                self.note("El buscador pidió una pausa; se retoma en 45 minutos")
+                break
+            if not mail:
                 continue
-            tried.add(lid)
-            n += 1
-            found = find_email_on_web(m.group(1))
-            if found and not self.dry:
-                self.crm.lead_patch(lid, lead, {"email": found}, {"type_": "nota", "text": f"Correo encontrado en su web: {found}"})
-                self.note(f"Correo encontrado para {lead.get('name')}")
-        self.status["webTried"] = list(tried)[-2000:]
+            found_n += 1
+            if self.dry:
+                self.note(f"Correo para {item.get('name')}: {mail}")
+                continue
+            if kind == "lead":
+                self.crm.lead_patch(key, item, {"email": mail}, {"type_": "nota", "text": f"Correo encontrado por el agente en {src}: {mail}"})
+            else:
+                item["email"] = mail
+                self.crm.merge(CANDS, key, {"email": mail})
+                score, why = fit(item, rubros)
+                if score >= self.cfg.min_score and self.new_today() < self.cfg.new_per_day and not self.find_lead(item):
+                    self.add_lead(key, item, score, why)
+            self.note(f"Correo encontrado para {item.get('name')} ({src})")
+            time.sleep(random.uniform(3, 6))
+        self.status["emailTried"] = dict(sorted(tried.items(), key=lambda kv: kv[1])[-3000:])
+        if done:
+            self.note(f"Buscó el correo de {done} negocios: encontró {found_n}")
+
+    def add_lead(self, cid: str, c: dict, score: int, why: list[str]) -> str:
+        now = now_iso()
+        seq = max([int(l.get("seq") or 0) for l in self.leads.values()] + [0]) + 1
+        lid = new_id()
+        notes = "\n".join(x for x in (f"Encontrado por el agente Harvey (OpenStreetMap) · potencial {score}/100.", ". ".join(why) + ".",
+                                      f"Dirección: {', '.join(x for x in (c.get('address'), c.get('zone')) if x)}." if c.get("address") or c.get("zone") else "",
+                                      f"Web: {c['website']}" if c.get("website") else "", f"Horario: {c['hours']}" if c.get("hours") else "") if x)
+        lead = {"name": c["name"], "city": c.get("city", ""), "category": c.get("category", ""), "phone": c.get("phone", ""),
+                "mapsUrl": c.get("mapsUrl", ""), "stage": "nuevo", "owner": self.crm.uid,
+                "priority": "alta" if score >= 70 else "media" if score >= 45 else "baja", "notes": notes, "nextAction": "", "nextDate": "",
+                "service": "", "value": 0, "contactName": "", "email": c.get("email", ""), "social": c.get("social", ""), "lostReason": "",
+                "source": "Harvey · agente", "lastContactAt": None, "seq": seq, "createdAt": now, "createdBy": self.crm.uid,
+                "updatedAt": now, "updatedBy": self.crm.uid}
+        self.crm.set("leads", lid, lead)
+        self.crm.activity(lid, c["name"], "creado", "Encontrado por el agente Harvey")
+        self.leads[lid] = lead
+        patch = {"status": "aprobado", "leadId": lid, "reviewedBy": self.crm.uid, "reviewedAt": now}
+        if cid in self.cands:
+            self.crm.merge(CANDS, cid, patch)
+        c.update(patch)
+        self.status["newLeads"] = {"day": today_lima(), "n": self.new_today() + 1}
+        return lid
 
     # 6. buscar negocios nuevos y anotar en el CRM a los que se les puede escribir
     def new_today(self) -> int:
@@ -797,7 +950,6 @@ class Agent:
         self.status["searched"] = done
         where = zone or city
         added = webs = cands = 0
-        seq = max([int(l.get("seq") or 0) for l in self.leads.values()] + [0])
         found.sort(key=lambda c: -fit(c, rubros)[0])
         for c in found:
             if c["id"] in self.cands or self.find_lead(c):
@@ -807,7 +959,7 @@ class Agent:
                 c["email"] = find_email_on_web(c["website"])
             score, why = fit(c, rubros)
             ok_mail = bool(EMAIL_RE.fullmatch(c["email"] or ""))
-            to_crm = ok_mail and score >= cfg.min_score and self.new_today() + added < cfg.new_per_day
+            to_crm = ok_mail and score >= cfg.min_score and self.new_today() < cfg.new_per_day
             if not to_crm and not c["phone"] and not ok_mail:
                 continue  # sin teléfono ni correo no hay cómo contactarlo
             if self.dry:
@@ -817,27 +969,12 @@ class Agent:
             cid = c.pop("id")
             cand = {**c, "rating": None, "reviews": None, "status": "revisar", "leadId": None, "source": "OpenStreetMap (agente)",
                     "foundBy": self.crm.uid, "foundAt": now, "updatedAt": now, "updatedBy": self.crm.uid}
-            if to_crm:
-                seq += 1
-                lid = new_id()
-                notes = "\n".join(x for x in (f"Encontrado por el agente Harvey (OpenStreetMap) · potencial {score}/100.", ". ".join(why) + ".",
-                                              f"Dirección: {', '.join(x for x in (c['address'], c['zone']) if x)}." if c["address"] or c["zone"] else "",
-                                              f"Web: {c['website']}" if c["website"] else "", f"Horario: {c['hours']}" if c["hours"] else "") if x)
-                lead = {"name": c["name"], "city": c["city"], "category": c["category"], "phone": c["phone"], "mapsUrl": c["mapsUrl"],
-                        "stage": "nuevo", "owner": self.crm.uid, "priority": "alta" if score >= 70 else "media" if score >= 45 else "baja",
-                        "notes": notes, "nextAction": "", "nextDate": "", "service": "", "value": 0, "contactName": "", "email": c["email"],
-                        "social": c["social"], "lostReason": "", "source": "Harvey · agente", "lastContactAt": None, "seq": seq,
-                        "createdAt": now, "createdBy": self.crm.uid, "updatedAt": now, "updatedBy": self.crm.uid}
-                self.crm.set("leads", lid, lead)
-                self.crm.activity(lid, c["name"], "creado", "Encontrado por el agente Harvey")
-                self.leads[lid] = lead
-                cand.update({"status": "aprobado", "leadId": lid, "reviewedBy": self.crm.uid, "reviewedAt": now})
-                added += 1
             self.crm.set(CANDS, cid, cand)
             self.cands[cid] = cand
             cands += 1
-        if added:
-            self.status["newLeads"] = {"day": today_lima(), "n": self.new_today() + added}
+            if to_crm:
+                self.add_lead(cid, cand, score, why)
+                added += 1
         self.note(f"Buscó {rubro} en {where}: {len(found)} negocios, {cands} nuevos, {added} con correo anotados en el CRM")
 
 

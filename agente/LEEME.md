@@ -17,7 +17,12 @@ los aprobados, dentro del horario y sin pasar el límite diario.
    El contacto pasa a *Contactado*, queda en el historial y se agenda el seguimiento.
 3. **Escribe seguimientos** en el mismo hilo para los que no respondieron en 5 días.
 4. **Escribe el primer correo** para los contactos *Por contactar* que tienen correo, empezando por prioridad alta.
-5. **Busca el correo** en la página web de los contactos que tienen web anotada y todavía no tienen correo.
+5. **Busca el correo en internet**, como Harvey, para los contactos *Por contactar* que no lo tienen (primero los de
+   prioridad alta) y para los candidatos que solo tienen teléfono: lee su web si la tiene, y si no, lo busca en un
+   buscador y en sus fichas de directorios. Solo acepta un correo que **corresponde al nombre del negocio** o está
+   en su propia web, y cuyo dominio **recibe correo**; nunca inventa una dirección. Revisa 6 negocios por ciclo
+   (`BUSQUEDAS_DE_CORREO_POR_CICLO`), no repite uno en 45 días y, si el buscador pide pausa, espera 45 minutos.
+   En las pruebas encontró el correo de 1 de cada 4 negocios.
 
 6. **Busca negocios nuevos** por su cuenta: una zona y un rubro del cliente ideal por ciclo, en OpenStreetMap
    (gratis). Saca el correo del mapa o de la web del negocio. Los que tienen correo y llegan al puntaje mínimo
