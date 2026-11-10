@@ -52,7 +52,7 @@ ROOT = HERE.parent
 LIMA = dt.timezone(dt.timedelta(hours=-5))
 VERSION = "1"
 
-OUTBOX, STATUS = "hv_outbox", "hv_agent"
+OUTBOX, STATUS, CANDS = "hv_outbox", "hv_agent", "hv_candidates"
 CASE_URL = "https://bahia-de-cuba.github.io/Bahia-Cuba-Landing-Page/"
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 BAD_EMAIL = re.compile(r"(\.(png|jpe?g|gif|webp|svg)$|example\.|sentry|wixpress|@(domain|email|correo)\.|noreply|no-reply)", re.I)
@@ -116,6 +116,12 @@ class Config:
         self.claude_daily = int(env.get("LLAMADAS_CLAUDE_POR_DIA", "60"))
         self.claude_model = env.get("MODELO_CLAUDE", "")
         self.interval = int(env.get("MINUTOS_ENTRE_CICLOS", "10"))
+        # Piloto automático: los primeros correos y seguimientos que pasan el control de calidad
+        # salen sin esperar aprobación. Las contestaciones a quien respondió siempre esperan a una persona.
+        self.autopilot = env.get("AUTOPILOTO", "no").strip().lower() in ("si", "sí", "yes", "1", "true")
+        self.prospect = env.get("BUSCAR_NEGOCIOS", "si").strip().lower() in ("si", "sí", "yes", "1", "true")
+        self.new_per_day = int(env.get("NUEVOS_POR_DIA", "20"))
+        self.min_score = int(env.get("UMBRAL_AUTOCONTACTO", "30"))
 
     def missing(self) -> list[str]:
         need = {"CRM_EMAIL": self.crm_email, "CRM_PASSWORD": self.crm_password, "CORREO_CPP": self.mail_user,
@@ -364,6 +370,176 @@ def find_email_on_web(url: str) -> str:
     return (same or found)[0]
 
 
+# ---------------------------------------------------------------- buscar negocios (OpenStreetMap, gratis)
+# Los mismos rubros y zonas que la pestaña Harvey -> Buscar negocios del CRM.
+RUBROS = {
+    "Dentista": ["amenity=dentist", "healthcare=dentist"],
+    "Clínica / centro médico": ["amenity=clinic", "amenity=doctors", "healthcare=clinic", "healthcare=physiotherapist"],
+    "Veterinaria": ["amenity=veterinary"],
+    "Estética / spa / salón": ["shop=beauty", "shop=hairdresser", "shop=massage", "leisure=spa"],
+    "Restaurante": ["amenity=restaurant"],
+    "Cafetería": ["amenity=cafe"],
+    "Hotel": ["tourism=hotel", "tourism=guest_house", "tourism=hostel", "tourism=motel"],
+    "Agencia de viajes": ["shop=travel_agency", "office=travel_agent"],
+    "Inmobiliaria": ["office=estate_agent"],
+    "Abogados": ["office=lawyer"],
+    "Contadores": ["office=accountant"],
+    "Constructora": ["office=construction_company", "craft=builder"],
+    "Gimnasio": ["leisure=fitness_centre", "leisure=sports_centre"],
+    "Panadería / pastelería": ["shop=bakery", "shop=pastry", "shop=confectionery"],
+    "Óptica": ["shop=optician"],
+    "Florería": ["shop=florist"],
+    "Tienda de ropa": ["shop=clothes", "shop=boutique"],
+    "Academia": ["amenity=language_school", "amenity=driving_school", "amenity=music_school", "amenity=dancing_school"],
+}
+DEFAULT_RUBROS = ["Dentista", "Clínica / centro médico", "Veterinaria", "Estética / spa / salón", "Hotel", "Restaurante", "Cafetería", "Inmobiliaria"]
+PLACES = [  # (ciudad, zona, lat, lng, km)
+    ("Lima", "Miraflores", -12.1211, -77.0297, 2.5), ("Lima", "San Isidro", -12.0977, -77.0365, 2.5),
+    ("Lima", "Santiago de Surco", -12.1450, -76.9910, 3.5), ("Lima", "San Borja", -12.1080, -76.9980, 2.5),
+    ("Lima", "Jesús María", -12.0770, -77.0480, 2), ("Lima", "Barranco", -12.1490, -77.0210, 1.5),
+    ("Lima", "La Molina", -12.0800, -76.9300, 3.5), ("Lima", "Los Olivos", -11.9700, -77.0730, 3),
+    ("Lima", "Cercado de Lima", -12.0464, -77.0428, 2.5), ("Trujillo", "", -8.1116, -79.0288, 4),
+    ("Arequipa", "", -16.4090, -71.5375, 4), ("Cusco", "", -13.5320, -71.9675, 3),
+    ("Chiclayo", "", -6.7714, -79.8409, 3.5), ("Piura", "", -5.1945, -80.6328, 3.5),
+]
+OVERPASS = ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter")
+SOCIAL_HOST = re.compile(r"(facebook|fb\.com|instagram|tiktok|linktr\.ee|wa\.me|whatsapp)", re.I)
+CAT_W = [(r"dent|odont", 30), (r"estetic|spa|salon|belleza|barber", 30), (r"clinic|medic|psicolog", 28), (r"veterin", 27),
+         (r"hotel|hostal", 26), (r"inmobil", 25), (r"restaur|cevich", 24), (r"abogad|jurid", 22), (r"contad|contable", 20),
+         (r"constru", 20), (r"cafeter|cafe|coffee", 18), (r"viaje|tour", 18), (r"tienda|bodega|minimarket", 4)]
+
+
+def fold(s) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(s or "")) if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def phone_key(p) -> str:
+    d = re.sub(r"\D", "", str(p or ""))
+    return d[-9:] if len(d) >= 7 else ""
+
+
+def channel(p) -> str:
+    d = re.sub(r"\D", "", str(p or ""))
+    if re.fullmatch(r"9\d{8}", d):
+        d = "51" + d
+    if re.fullmatch(r"519\d{8}", d):
+        return "wa"
+    return "fijo" if len(d) >= 7 else "none"
+
+
+def fit(c: dict, rubros: list[str]) -> tuple[int, list[str]]:
+    """Puntaje 0-100 con sus razones, con las mismas reglas que la pestaña Harvey del CRM
+    (sin estrellas de Maps, que OpenStreetMap no trae)."""
+    s, why = 0, []
+    if not c.get("website"):
+        s += 25; why.append("Solo tiene redes, sin página propia" if c.get("social") else "Sin página web propia")
+    else:
+        s += 3; why.append("Ya tiene web: ofrecer mejora o rediseño")
+    ch = channel(c.get("phone"))
+    if ch == "wa":
+        s += 25; why.append("WhatsApp directo")
+    elif ch == "fijo":
+        s += 12; why.append("Solo teléfono fijo")
+    elif c.get("email"):
+        s += 8; why.append("Solo correo")
+    if c.get("social"):
+        s += 8; why.append("Activo en redes")
+    if c.get("category") in rubros:
+        s += 12; why.append("Rubro prioritario")
+    else:
+        cc = fold(c.get("category"))
+        s += round(next((w for p, w in CAT_W if re.search(p, cc)), 12) / 30 * 8)
+    return max(0, min(100, s)), why
+
+
+def overpass(query: str) -> dict:
+    last = None
+    for i, url in enumerate(OVERPASS):
+        if i:
+            time.sleep(5)
+        req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": query}).encode(), method="POST",
+                                     headers={"User-Agent": "CPP-CRM/1 (prospección de negocios locales; cppcstudio.com)"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (429, 500, 502, 503, 504):
+                raise
+        except Exception as e:
+            last = e
+    raise RuntimeError(f"OpenStreetMap no respondió ({last}). Se reintenta en el próximo ciclo.")
+
+
+def social_url(v: str, host: str) -> str:
+    v = str(v or "").strip()
+    if not v:
+        return ""
+    if re.match(r"^https?://", v, re.I):
+        return v
+    if re.match(r"^[\w.-]+\.[a-z]{2,}/", v, re.I):
+        return "https://" + v
+    return f"https://{host}/{v.lstrip('@')}"
+
+
+def discover(city: str, zone: str, lat: float, lng: float, km: float, rubro: str) -> list[dict]:
+    r = int(km * 1000)
+    clauses = "".join(f'nwr["{t.split("=")[0]}"="{t.split("=")[1]}"](around:{r},{lat},{lng});' for t in RUBROS[rubro])
+    data = overpass(f"[out:json][timeout:90];({clauses});out center tags 300;")
+    out, seen = [], set()
+    for el in data.get("elements") or []:
+        t = el.get("tags") or {}
+        name = str(t.get("name") or t.get("name:es") or t.get("brand") or "").strip()
+        if not name:
+            continue
+        web = str(t.get("website") or t.get("contact:website") or t.get("url") or "").strip()
+        if web and not re.match(r"^https?://", web, re.I):
+            web = "https://" + web
+        socials = [x for x in (social_url(t.get("contact:facebook") or t.get("facebook"), "facebook.com"),
+                               social_url(t.get("contact:instagram") or t.get("instagram"), "instagram.com"),
+                               social_url(t.get("contact:tiktok"), "tiktok.com")) if x]
+        if web and SOCIAL_HOST.search(urllib.parse.urlparse(web).hostname or ""):
+            socials.insert(0, web); web = ""
+        phone = str(t.get("phone") or t.get("contact:phone") or t.get("contact:mobile") or t.get("mobile") or "").split(";")[0].strip()
+        key = fold(name) + "|" + phone_key(phone)
+        if key in seen:
+            continue
+        seen.add(key)
+        z = t.get("addr:suburb") or t.get("addr:district") or zone
+        out.append({"id": f"osm-{str(el.get('type'))[0]}{el.get('id')}", "name": name, "category": rubro, "city": city, "zone": z,
+                    "address": " ".join(x for x in (t.get("addr:street"), t.get("addr:housenumber")) if x), "phone": phone,
+                    "email": str(t.get("email") or t.get("contact:email") or "").strip().lower(), "website": web,
+                    "social": " ".join(dict.fromkeys(socials)), "hours": t.get("opening_hours", ""),
+                    "osmUrl": f"https://www.openstreetmap.org/{el.get('type')}/{el.get('id')}",
+                    "mapsUrl": "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(", ".join(x for x in (name, z, city, "Perú") if x))})
+    return out
+
+
+# Lo que el piloto automático revisa antes de enviar sin una persona. Lo que no pasa, espera aprobación.
+JARGON = re.compile(r"\b(landing|seo|ux|ui|responsive|funnel|conversi[oó]n|revolucion\w*|siguiente nivel|soluciones integrales)\b", re.I)
+PRICE = re.compile(r"(S/\s?\d|\$\s?\d|\d+\s?(soles|d[oó]lares|usd)\b)", re.I)
+
+
+def quality_problems(item: dict) -> list[str]:
+    body, subj = item.get("body", ""), item.get("subject", "")
+    p = []
+    if not subj.strip() or len(subj) > 90:
+        p.append("asunto vacío o muy largo")
+    words = len(body.split())
+    if words < 40 or words > 190:
+        p.append(f"largo raro ({words} palabras)")
+    if JARGON.search(body) or JARGON.search(subj):
+        p.append("usa jerga o frases vacías")
+    if PRICE.search(body):
+        p.append("menciona precio en un primer contacto")
+    if body.count("¿") > 2:
+        p.append("más de una pregunta")
+    if re.search(r"\{\w+\}|\[[^\]]{2,30}\]", body + subj):
+        p.append("quedó un dato sin completar")
+    return p
+
+
 # ---------------------------------------------------------------- el ciclo
 class Agent:
     def __init__(self, cfg: Config, dry: bool = False):
@@ -384,7 +560,10 @@ class Agent:
         self.outbox = {k: {**v, "_id": k} for k, v in crm.all(OUTBOX).items()}
         self.report = []
         err = ""
-        for step in (self.handle_replies, self.send_approved, self.write_followups, self.write_first, self.find_emails):
+        self.cands = crm.all(CANDS)
+        self.icp = crm.all("hv_config").get("icp") or {}
+        # Responder > enviar > seguir > conseguir correos > buscar negocios > escribir a los nuevos.
+        for step in (self.handle_replies, self.send_approved, self.write_followups, self.find_emails, self.prospect, self.write_first):
             try:
                 step()
             except Exception as e:  # un paso que falla no detiene los demás
@@ -396,7 +575,9 @@ class Agent:
                                        "sender": cfg.sender_name, "agentUser": crm.uid, "sentToday": sent_today,
                                        "dailyLimit": cfg.daily_limit, "window": f"{cfg.hours[0]}:00–{cfg.hours[1]}:00, días {cfg.days}",
                                        "inWindow": cfg.in_window(), "claudeToday": self.claude.calls_today(),
-                                       "claudeLimit": cfg.claude_daily, "last": self.report[-8:], "version": VERSION})
+                                       "claudeLimit": cfg.claude_daily, "last": self.report[-8:], "version": VERSION,
+                                       "autopilot": cfg.autopilot, "prospecting": cfg.prospect, "newToday": self.new_today(),
+                                       "newLimit": cfg.new_per_day})
 
     # 1. respuestas
     def handle_replies(self) -> None:
@@ -517,6 +698,12 @@ class Agent:
     def save_draft(self, item: dict) -> None:
         oid = new_id()
         item.update({"status": "por_aprobar", "createdAt": now_iso(), "createdBy": "agente"})
+        if self.cfg.autopilot and item.get("kind") in ("primer", "seguimiento"):
+            problems = quality_problems(item)
+            if problems:
+                item["review"] = "Espera aprobación: " + ", ".join(problems)
+            else:
+                item.update({"status": "aprobado", "approvedBy": "agente", "approvedAt": now_iso()})
         if not self.dry:
             self.crm.set(OUTBOX, oid, item)
         self.outbox[oid] = {**item, "_id": oid}
@@ -575,6 +762,82 @@ class Agent:
                 self.crm.lead_patch(lid, lead, {"email": found}, {"type_": "nota", "text": f"Correo encontrado en su web: {found}"})
                 self.note(f"Correo encontrado para {lead.get('name')}")
         self.status["webTried"] = list(tried)[-2000:]
+
+    # 6. buscar negocios nuevos y anotar en el CRM a los que se les puede escribir
+    def new_today(self) -> int:
+        c = self.status.get("newLeads") or {}
+        return c.get("n", 0) if c.get("day") == today_lima() else 0
+
+    def find_lead(self, c: dict):
+        d, n, ci = phone_key(c.get("phone")), fold(c.get("name")), fold(c.get("city"))
+        e = str(c.get("email") or "").lower()
+        for lid, l in self.leads.items():
+            if (d and phone_key(l.get("phone")) == d) or (e and str(l.get("email", "")).lower() == e) \
+                    or (n and fold(l.get("name")) == n and (not ci or not l.get("city") or fold(l.get("city")) == ci)):
+                return lid
+        return None
+
+    def prospect(self) -> None:
+        cfg = self.cfg
+        if not cfg.prospect or self.new_today() >= cfg.new_per_day:
+            return
+        # No buscar más si ya hay suficiente trabajo esperando.
+        if sum(1 for l in self.leads.values() if l.get("stage") == "nuevo" and l.get("email") and not l.get("noContactar")) >= 30:
+            return
+        rubros = [r for r in (self.icp.get("rubros") or DEFAULT_RUBROS) if r in RUBROS] or DEFAULT_RUBROS
+        done = self.status.get("searched") or {}
+        cutoff = (dt.datetime.now(LIMA) - dt.timedelta(days=30)).strftime("%Y-%m-%d")
+        todo = [(p, r) for p in PLACES for r in rubros if done.get(f"{p[0]}|{p[1]}|{r}", "") < cutoff]
+        if not todo:
+            return
+        (city, zone, lat, lng, km), rubro = todo[0]  # una búsqueda por ciclo: OpenStreetMap es un servicio voluntario
+        found = discover(city, zone, lat, lng, km, rubro)
+        done[f"{city}|{zone}|{rubro}"] = today_lima()
+        self.status["searched"] = done
+        where = zone or city
+        added = webs = cands = 0
+        seq = max([int(l.get("seq") or 0) for l in self.leads.values()] + [0])
+        found.sort(key=lambda c: -fit(c, rubros)[0])
+        for c in found:
+            if c["id"] in self.cands or self.find_lead(c):
+                continue
+            if not c["email"] and c["website"] and webs < 8:
+                webs += 1
+                c["email"] = find_email_on_web(c["website"])
+            score, why = fit(c, rubros)
+            ok_mail = bool(EMAIL_RE.fullmatch(c["email"] or ""))
+            to_crm = ok_mail and score >= cfg.min_score and self.new_today() + added < cfg.new_per_day
+            if not to_crm and not c["phone"] and not ok_mail:
+                continue  # sin teléfono ni correo no hay cómo contactarlo
+            if self.dry:
+                self.note(f"{'Anotaría' if to_crm else 'Candidato'}: {c['name']} ({score})")
+                continue
+            now = now_iso()
+            cid = c.pop("id")
+            cand = {**c, "rating": None, "reviews": None, "status": "revisar", "leadId": None, "source": "OpenStreetMap (agente)",
+                    "foundBy": self.crm.uid, "foundAt": now, "updatedAt": now, "updatedBy": self.crm.uid}
+            if to_crm:
+                seq += 1
+                lid = new_id()
+                notes = "\n".join(x for x in (f"Encontrado por el agente Harvey (OpenStreetMap) · potencial {score}/100.", ". ".join(why) + ".",
+                                              f"Dirección: {', '.join(x for x in (c['address'], c['zone']) if x)}." if c["address"] or c["zone"] else "",
+                                              f"Web: {c['website']}" if c["website"] else "", f"Horario: {c['hours']}" if c["hours"] else "") if x)
+                lead = {"name": c["name"], "city": c["city"], "category": c["category"], "phone": c["phone"], "mapsUrl": c["mapsUrl"],
+                        "stage": "nuevo", "owner": self.crm.uid, "priority": "alta" if score >= 70 else "media" if score >= 45 else "baja",
+                        "notes": notes, "nextAction": "", "nextDate": "", "service": "", "value": 0, "contactName": "", "email": c["email"],
+                        "social": c["social"], "lostReason": "", "source": "Harvey · agente", "lastContactAt": None, "seq": seq,
+                        "createdAt": now, "createdBy": self.crm.uid, "updatedAt": now, "updatedBy": self.crm.uid}
+                self.crm.set("leads", lid, lead)
+                self.crm.activity(lid, c["name"], "creado", "Encontrado por el agente Harvey")
+                self.leads[lid] = lead
+                cand.update({"status": "aprobado", "leadId": lid, "reviewedBy": self.crm.uid, "reviewedAt": now})
+                added += 1
+            self.crm.set(CANDS, cid, cand)
+            self.cands[cid] = cand
+            cands += 1
+        if added:
+            self.status["newLeads"] = {"day": today_lima(), "n": self.new_today() + added}
+        self.note(f"Buscó {rubro} en {where}: {len(found)} negocios, {cands} nuevos, {added} con correo anotados en el CRM")
 
 
 def check(cfg: Config) -> int:

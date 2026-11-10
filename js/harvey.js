@@ -433,6 +433,7 @@ function agentHTML() {
       <div><span class="lbl">Enviados hoy</span><b>${esc(a.sentToday ?? 0)} de ${esc(a.dailyLimit ?? "—")}</b><small>${esc(a.window || "")}${a.inWindow === false ? " · ahora fuera de horario" : ""}</small></div>
       <div><span class="lbl">Claude hoy</span><b>${esc(a.claudeToday ?? 0)} de ${esc(a.claudeLimit ?? "—")}</b><small>redacciones con la suscripción</small></div>
       <div><span class="lbl">Último ciclo</span><b>${esc(rel(a.lastRun))}</b><small>${live ? "revisa cada pocos minutos" : "¿está apagada la computadora?"}</small></div></div>
+    <p class="hint" style="margin:10px 0 0">${a.autopilot ? `<b>Piloto automático:</b> los primeros correos y seguimientos que pasan el control de calidad salen solos; las contestaciones a quien respondió esperan aprobación.` : `<b>Con aprobación:</b> nada sale sin que alguien lo apruebe aquí.`}${a.prospecting ? ` Busca negocios por su cuenta: ${esc(a.newToday ?? 0)} de ${esc(a.newLimit ?? "—")} anotados hoy.` : ""}</p>
     ${a.error ? `<div class="banner bad" style="margin:12px 0 0">${ic("alert", 18)}<div>${esc(a.error)}</div></div>` : ""}
     ${(a.last || []).length ? `<p class="hint" style="margin:10px 0 0">${(a.last || []).slice(-4).map(esc).join(" · ")}</p>` : ""}</section>`;
 }
@@ -440,7 +441,8 @@ function mailCard(o) {
   const d = H.drafts.get(o.id) || {}; const edit = o.status === "por_aprobar" || o.status === "error";
   const subj = d.subject ?? o.subject ?? "", body = d.body ?? o.body ?? ""; const lead = S.leads.get(o.leadId);
   const legal = o.kind !== "respuesta" ? `<p class="hint" style="margin:6px 0 0">Al enviarlo se agrega «PUBLICIDAD:» al asunto (Ley 28493), la firma de CPP y cómo darse de baja.</p>` : "";
-  const when = o.status === "enviado" ? `Enviado ${esc(rel(o.sentAt))}${o.approvedBy ? ` · aprobó ${esc(firstName(o.approvedBy))}` : ""}` : o.status === "aprobado" ? `Aprobado ${esc(rel(o.approvedAt))} por ${esc(firstName(o.approvedBy))} · sale en el próximo ciclo dentro del horario` : `Redactado ${esc(rel(o.createdAt))}`;
+  const by = id => id === "agente" ? "el piloto automático" : firstName(id);
+  const when = o.status === "enviado" ? `Enviado ${esc(rel(o.sentAt))}${o.approvedBy ? ` · aprobó ${esc(by(o.approvedBy))}` : ""}` : o.status === "aprobado" ? `Aprobado ${esc(rel(o.approvedAt))} por ${esc(by(o.approvedBy))} · sale en el próximo ciclo dentro del horario` : `Redactado ${esc(rel(o.createdAt))}`;
   const acts = o.status === "por_aprobar" ? `<button class="btn sm ghost" data-hv-odrop="${esc(o.id)}">Descartar</button><button class="btn sm" data-hv-osave="${esc(o.id)}">Guardar cambios</button><button class="btn sm primary" data-hv-oapprove="${esc(o.id)}">${ic("check", 14)} Aprobar envío</button>`
     : o.status === "aprobado" ? `<button class="btn sm" data-hv-oback="${esc(o.id)}">Volver a borrador</button>`
     : o.status === "error" ? `<button class="btn sm ghost" data-hv-odrop="${esc(o.id)}">Descartar</button><button class="btn sm primary" data-hv-oapprove="${esc(o.id)}">Reintentar envío</button>`
@@ -449,6 +451,7 @@ function mailCard(o) {
       <div class="sub">Para <span class="mono">${esc(o.to || "")}</span> · ${esc(KIND[o.kind] || o.kind || "")}${lead ? ` · ${stChip(lead.stage)}` : ""}</div></div><span class="sub">${when}</span></div>
     ${o.kind === "respuesta" && o.theirReply ? `<div class="hv-quote"><span class="lbl">Lo que respondió${o.summary ? ` — ${esc(o.summary)}` : ""}</span>${esc(o.theirReply.slice(0, 900))}</div>` : ""}
     ${o.status === "error" && o.error ? `<div class="banner bad" style="margin:0 0 10px">${ic("alert", 18)}<div>${esc(o.error)}</div></div>` : ""}
+    ${o.status === "por_aprobar" && o.review ? `<div class="banner" style="margin:0 0 10px">${ic("flag", 18)}<div>El piloto automático no lo envió solo. ${esc(o.review.replace(/^Espera aprobación:\s*/, "Motivo: "))}.</div></div>` : ""}
     <label class="lbl" for="hv-os-${esc(o.id)}">Asunto</label><input id="hv-os-${esc(o.id)}" class="inp" data-hv-osubj="${esc(o.id)}" value="${esc(subj)}"${edit ? "" : " readonly"}>
     <label class="lbl" for="hv-ob-${esc(o.id)}" style="margin-top:8px">Mensaje</label><textarea id="hv-ob-${esc(o.id)}" class="inp" rows="${Math.min(14, Math.max(6, body.split("\n").length + 2))}" data-hv-obody="${esc(o.id)}"${edit ? "" : " readonly"}>${esc(body)}</textarea>${legal}
     ${(o.why || []).length ? `<details class="hv-whyd"><summary>Por qué Claude lo escribió así</summary><ul>${o.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul></details>` : ""}

@@ -19,6 +19,19 @@ los aprobados, dentro del horario y sin pasar el límite diario.
 4. **Escribe el primer correo** para los contactos *Por contactar* que tienen correo, empezando por prioridad alta.
 5. **Busca el correo** en la página web de los contactos que tienen web anotada y todavía no tienen correo.
 
+6. **Busca negocios nuevos** por su cuenta: una zona y un rubro del cliente ideal por ciclo, en OpenStreetMap
+   (gratis). Saca el correo del mapa o de la web del negocio. Los que tienen correo y llegan al puntaje mínimo
+   entran al CRM como *Por contactar*, a nombre de quien maneja el agente, y en el mismo ciclo reciben su borrador.
+   Los que solo tienen teléfono quedan en **Harvey → Candidatos** para escribirles por WhatsApp.
+   Cada zona y rubro se repite como mucho una vez al mes, y entran como máximo 20 negocios al día (`NUEVOS_POR_DIA`).
+
+### Piloto automático (`AUTOPILOTO=si`)
+Los primeros correos y los seguimientos salen **sin esperar aprobación** si pasan el control de calidad:
+asunto corto, entre 40 y 190 palabras, sin jerga, sin precio, una sola pregunta y sin datos a medio completar.
+Los que no pasan quedan en **Por aprobar** con el motivo. Las **contestaciones a quien respondió siempre esperan a
+una persona**: ahí ya hay un cliente interesado y conviene que lo atienda alguien del equipo.
+El límite diario de envíos sigue mandando. Con `AUTOPILOTO=no`, todo espera aprobación.
+
 Los correos en frío llevan **«PUBLICIDAD:»** al inicio del asunto, la firma de CPP y una forma
 simple de darse de baja, como pide la Ley 28493.
 
