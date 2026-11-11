@@ -136,6 +136,11 @@ class Config:
 
     def in_window(self) -> bool:
         now = dt.datetime.now(LIMA)
+        # HORARIO_HOY=2026-11-10:9-22 cambia el horario de envío solo ese día.
+        day, _, span = self.env.get("HORARIO_HOY", "").partition(":")
+        if day == now.strftime("%Y-%m-%d") and "-" in span:
+            h0, h1 = (int(x) for x in span.split("-"))
+            return h0 <= now.hour < h1
         d0, d1 = (int(x) for x in self.days.split("-"))
         return d0 <= now.isoweekday() <= d1 and self.hours[0] <= now.hour < self.hours[1]
 
