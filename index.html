@@ -413,6 +413,15 @@ body.dw-open{overflow:hidden}
 .qr-next span{display:flex;flex-direction:column;min-width:0;max-width:100%}
 .qr-next b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qr-next small{color:var(--text-3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hook{padding:10px 12px;border-radius:var(--r-sm);background:var(--accent-soft);font-size:13px;line-height:1.5;margin-bottom:10px}
+.hook b{color:var(--accent)}
+.kv{display:grid;grid-template-columns:minmax(110px,max-content) minmax(0,1fr);gap:6px 12px;margin:0;font-size:13px}
+.kv dt{color:var(--text-3)}
+.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.vmsg{border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin-top:8px;background:var(--surface-2)}
+.vmsg-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:13px}
+.vmsg-t{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5}
+.tpl-opt.vendor{border-style:dashed}
 .qr-discard{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface-2)}
 </style>
 </head>
@@ -517,7 +526,7 @@ const saveF=()=>store.set("crm.filters",F);
 /* ================= people ================= */
 function nameOf(id){if(!id)return "Sin asignar";const p=S.profiles[id];if(p&&p.name)return p.name;if(id===S.me.id)return S.me.name||"Tú";return "Miembro del equipo"}
 function firstName(id){return nameOf(id).split(" ")[0]}
-function initials(n){const p=String(n||"?").trim().split(/\s+/);return ((p[0]||"?")[0]+(p[1]?p[1][0]:"")).toUpperCase()}
+function initials(n){const p=String(n||"").replace(/[^\p{L}\p{N}\s]/gu," ").trim().split(/\s+/).filter(Boolean);if(!p.length)return "?";return ((p[0][0]||"?")+(p[1]?p[1][0]:"")).toUpperCase()}
 function avatar(id,lg){if(!id)return `<span class="av none${lg?" lg":""}" title="Sin asignar"></span>`;const p=S.profiles[id];const n=nameOf(id);const url=p&&p.avatarUrl||(id===S.me.id?S.me.avatarUrl:"");const col=p&&p.color||(id===S.me.id?S.me.color:"")||"var(--text-3)";if(url)return `<span class="av${lg?" lg":""}" title="${esc(n)}"><img src="${esc(url)}" alt=""></span>`;return `<span class="av${lg?" lg":""}" style="background:${esc(col)}" title="${esc(n)}">${esc(initials(n))}</span>`}
 function who(id){return `<span class="who">${avatar(id)}<span>${esc(id?nameOf(id)+(id===S.me.id?" (tú)":""):"Sin asignar")}</span></span>`}
 function teamIds(){const ids=new Set(S.members.keys());if(S.user&&typeof S.user.teamIds==="function")S.user.teamIds().forEach(id=>ids.add(id));if(S.me.id)ids.add(S.me.id);S.leads.forEach(l=>{if(l.owner)ids.add(l.owner)});return [...ids].sort((a,b)=>nameOf(a).localeCompare(nameOf(b),"es"))}
@@ -609,7 +618,11 @@ const CAT_W=[[/dent|odont/,30],[/estetic|spa|salon|belleza|barber/,30],[/clinic|
 const GENERIC_NAME=/^(tienda|dentista|clinica|odontologia|consultorio dental|centro odontologico|mi tienda|la tiendita|la tienda|grocery store|cafeteria francesa|brackets|madrid|vega|saya|mana)$/;
 const scoreCache=new Map();
 function leadScore(l){
-  const key=[l.name,l.category,l.city,l.phone,l.notes].join("|");const hit=scoreCache.get(l.id);if(hit&&hit.key===key)return hit.v;
+  const key=[l.name,l.category,l.city,l.phone,l.notes,l.hermesScore].join("|");const hit=scoreCache.get(l.id);if(hit&&hit.key===key)return hit.v;
+  if(typeof l.hermesScore==="number"){ // researched by Hermes: trust the Prospector's 0–10 score
+    const s=Math.max(0,Math.min(100,Math.round(l.hermesScore*10)));const level=s>=80?"alto":s>=60?"medio":"bajo";
+    const why=[`Prospector: ${l.hermesScore}/10`];if(l.hermesPriority)why.push(`Prioridad ${l.hermesPriority}`);why.push(channel(l)==="wa"?"Tiene WhatsApp":l.instagram?"Contacto por Instagram":"Sin WhatsApp");
+    const v={score:s,level,why};scoreCache.set(l.id,{key,v});return v}
   let s=0;const why=[];const ch=channel(l);const n=norm(l.name).trim();const c=norm(l.category);const city=norm(l.city);
   if(ch==="wa"){s+=30;why.push("Tiene WhatsApp")}else if(ch==="fijo"){s+=10;why.push("Solo teléfono fijo")}else why.push("Sin teléfono");
   let cw=12;for(const [re,w] of CAT_W)if(re.test(c)){cw=w;break}
@@ -733,7 +746,7 @@ function filterLeads(useStage=true){const q=norm(F.q).trim();const words=q?q.spl
     if(F.city&&l.city!==F.city)return false;if(F.cat&&l.category!==F.cat)return false;
     if(F.channel&&channel(l)!==F.channel)return false;
     if(F.owner){if(F.owner==="_me"){if(!S.me.id||l.owner!==S.me.id)return false}else if(F.owner==="_none"){if(l.owner)return false}else if(l.owner!==F.owner)return false}
-    if(words.length){const hay=norm([l.name,l.category,l.city,l.notes,l.contactName,l.nextAction,l.email,l.social].join(" "));const okT=words.every(w=>hay.includes(w));const okP=qd.length>=3&&digits(l.phone).includes(qd);if(!okT&&!okP)return false}
+    if(words.length){const hay=norm([l.name,l.category,l.city,l.district,l.address,l.hook,l.notes,l.contactName,l.nextAction,l.email,l.social].join(" "));const okT=words.every(w=>hay.includes(w));const okP=qd.length>=3&&digits(l.phone).includes(qd);if(!okT&&!okP)return false}
     return true})}
 const SORTS={score:l=>-leadScore(l).score,seq:l=>l.seq??1e9,name:l=>norm(l.name),city:l=>norm(l.city),stage:l=>ST[l.stage]?ST[l.stage].i:99,owner:l=>l.owner?norm(nameOf(l.owner)):"~",nextDate:l=>l.nextDate||"9999-99-99",lastContactAt:l=>l.lastContactAt||"",updatedAt:l=>l.updatedAt||""};
 function sortLeads(list){const fn=SORTS[F.sort]||SORTS.seq;const d=F.dir===-1?-1:1;return list.sort((a,b)=>{const x=fn(a),y=fn(b);if(x<y)return -d;if(x>y)return d;return (a.seq??0)-(b.seq??0)})}
@@ -846,7 +859,7 @@ VIEWS.contactos={
     for(const l of rows){const ch=channel(l);const late=l.nextDate&&l.nextDate<t&&!CLOSED.includes(l.stage);const tod=l.nextDate===t;
       h+=`<tr data-open="${esc(l.id)}" class="${S.sel.has(l.id)?"sel":""}">
         <td class="c-chk"><input type="checkbox" data-act="sel" data-id="${esc(l.id)}" ${S.sel.has(l.id)?"checked":""} aria-label="Seleccionar ${esc(l.name)}"></td>
-        <td><div class="nm" title="${esc(l.name)}">${l.priority==="alta"?`<span class="prio alta" title="Prioridad alta" style="margin-right:6px;display:inline-block"></span>`:""}${esc(l.name)}</div><div class="sub">${esc(l.category||"Sin rubro")}</div>${livePill(l.id)?`<div style="margin-top:3px">${livePill(l.id)}</div>`:""}</td>
+        <td><div class="nm" title="${esc(l.name)}">${l.priority==="alta"?`<span class="prio alta" title="Prioridad alta" style="margin-right:6px;display:inline-block"></span>`:""}${esc(l.name)}</div><div class="sub">${esc(l.category||"Sin rubro")}${l.district?` · ${esc(l.district)}`:""}</div>${livePill(l.id)?`<div style="margin-top:3px">${livePill(l.id)}</div>`:""}</td>
         <td>${potChip(leadScore(l))}</td>
         <td>${esc(l.city||"—")}</td>
         <td>${l.phone?`<div class="mono num ph-num">${esc(l.phone)}</div><div class="ch ${ch==="wa"?"wa":""}">${ic(ch==="wa"?"wa":"phone",12)}${CH[ch]}</div>`:`<span class="ch">${ic("map",12)}Sin teléfono</span>`}</td>
@@ -907,11 +920,14 @@ function qrQueue(){const me=S.me.id;return [...S.leads.values()]
   .filter(l=>l.stage==="nuevo"&&channel(l)==="wa"&&!l.lastContactAt&&(!l.owner||l.owner===me)&&!liveOn(l.id).length&&!S.qSkip.has(l.id)&&(!S.qCity||l.city===S.qCity)&&(!S.qCat||l.category===S.qCat))
   .map(l=>({l,sc:leadScore(l)})).sort((a,b)=>b.sc.score-a.sc.score||(a.l.seq??0)-(b.l.seq??0))}
 function sentToday(){const t=todayStr();return S.acts.filter(a=>a.by&&a.by===S.me.id&&a.type==="whatsapp"&&todayStr(new Date(a.at))===t).length}
-function qrTplId(){return S.templates.some(t=>t.id===S.qTpl)?S.qTpl:(S.templates[0]&&S.templates[0].id)}
+/* Messages written by Hermes' Vendedor for this lead, offered as templates before the team's own. */
+function vendorTpls(l){if(!l)return [];return [["v-msg1","Mensaje del Vendedor",l.vMsg1],["v-f3","Vendedor · seguimiento día 3",l.vFollow3],["v-f7","Vendedor · seguimiento día 7",l.vFollow7]].filter(x=>x[2]).map(([id,name,body])=>({id,name,body,vendor:true}))}
+function qrTpls(l){return [...vendorTpls(l),...S.templates]}
+function qrTplId(){const l=S.leads.get(S.qCur);const list=qrTpls(l);if(S.qTplPicked&&list.some(t=>t.id===S.qTpl))return S.qTpl;if(l&&l.vMsg1)return "v-msg1";return list.some(t=>t.id===S.qTpl)?S.qTpl:(list[0]&&list[0].id)}
 function qrHref(){const l=S.leads.get(S.qCur),ta=$("#qr-text"),a=$("#qr-open");if(!l||!ta||!a)return;a.href=`https://wa.me/${normDigits(l.phone)}`+(ta.value.trim()?`?text=${encodeURIComponent(ta.value)}`:"")}
-function qrFill(){const l=S.leads.get(S.qCur),ta=$("#qr-text");if(!l||!ta)return;const tp=S.templates.find(t=>t.id===qrTplId());ta.value=tp?fillTpl(tp.body,l):"";ta.oninput=qrHref;qrHref();
+function qrFill(){const l=S.leads.get(S.qCur),ta=$("#qr-text");if(!l||!ta)return;const tp=qrTpls(l).find(t=>t.id===qrTplId());ta.value=tp?fillTpl(tp.body,l):"";ta.oninput=qrHref;qrHref();
   $$(".qr-tpls .tpl-opt").forEach(b=>b.classList.toggle("on",b.dataset.id===qrTplId()))}
-function qrNext(){S.qCur=null;renderView();window.scrollTo(0,0)}
+function qrNext(){S.qCur=null;S.qTplPicked=false;renderView();window.scrollTo(0,0)}
 VIEWS.rapido={
   mount(){return `<header class="ph"><div><h1>Contacto rápido</h1><p>Los negocios con más potencial, uno por uno y con el mensaje listo. Tú lo revisas y lo envías desde tu WhatsApp.</p></div>
     <div class="ph-act"><select id="qr-city" data-act="qr-city" aria-label="Ciudad"></select><select id="qr-cat" data-act="qr-cat" aria-label="Rubro"></select></div></header><div id="vbody"></div>`},
@@ -936,7 +952,8 @@ VIEWS.rapido={
         <h2>${esc(l.name)}</h2>
         <div class="dw-sub" style="margin:0"><span>${esc(l.category||"Sin rubro")}</span><span>${esc(l.city||"")}</span><span class="mono">${esc(l.phone)}</span><a href="${esc(mapsHref(l))}" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a></div>
         <div class="why">${sc.why.map(w=>`<span class="chip plain">${esc(w)}</span>`).join("")}</div></div>
-      <div><span class="lbl">Plantilla</span><div class="qr-tpls">${S.templates.map(t=>`<button class="tpl-opt" data-act="qr-tpl" data-id="${esc(t.id)}">${esc(t.name)}</button>`).join("")}</div></div>
+      ${l.hook?`<div class="hook"><b>Gancho de venta:</b> ${esc(l.hook)}</div>`:""}
+      <div><span class="lbl">Plantilla</span><div class="qr-tpls">${qrTpls(l).map(t=>`<button class="tpl-opt${t.vendor?" vendor":""}" data-act="qr-tpl" data-id="${esc(t.id)}">${esc(t.name)}</button>`).join("")}</div></div>
       <div><label class="lbl" for="qr-text">Mensaje (puedes editarlo antes de enviarlo)</label><textarea id="qr-text" class="inp" rows="12"></textarea></div>
       <div class="qr-actions"><a class="btn primary" id="qr-open" data-act="qr-open" target="_blank" rel="noopener noreferrer">${ic("wa")} Abrir WhatsApp</a>
         <button class="btn" data-act="qr-sent" data-w>${ic("check")} Ya lo envié · siguiente</button><span class="sp"></span>
@@ -949,16 +966,16 @@ VIEWS.rapido={
 };
 async function qrAction(act,el){
   const id=S.qCur;const l=id&&S.leads.get(id);
-  if(act==="qr-pick"){S.qCur=el.dataset.id;renderView();window.scrollTo(0,0);return}
+  if(act==="qr-pick"){S.qCur=el.dataset.id;S.qTplPicked=false;renderView();window.scrollTo(0,0);return}
   if(act==="qr-reset"){S.qSkip.clear();renderView();return}
-  if(act==="qr-tpl"){S.qTpl=el.dataset.id;store.set("crm.qtpl",S.qTpl);qrFill();return}
+  if(act==="qr-tpl"){S.qTpl=el.dataset.id;S.qTplPicked=true;if(!el.dataset.id.startsWith("v-"))store.set("crm.qtpl",S.qTpl);qrFill();return}
   if(act==="qr-open"){qrHref();return}
   if(!l)return;
   if(act==="qr-skip"){S.qSkip.add(id);qrNext();return}
   if(act==="qr-discard"){const box=$("#qr-discard");if(box)box.hidden=!box.hidden;return}
   if(act==="qr-discard-no"){const box=$("#qr-discard");if(box)box.hidden=true;return}
   if(act==="qr-discard-ok"){el.disabled=true;const reason=el.dataset.reason;const ok=await saveLead(id,{stage:"descartado",stageAt:nowISO(),lostReason:reason},{type:"estado",from:l.stage,to:"descartado",text:reason});if(ok){toast(`${shortName(l.name)}: descartado (${reason})`);qrNext()}else el.disabled=false;return}
-  if(act==="qr-sent"){el.disabled=true;const tp=S.templates.find(t=>t.id===qrTplId());
+  if(act==="qr-sent"){el.disabled=true;const tp=qrTpls(l).find(t=>t.id===qrTplId());
     const ok=await logActivity(id,"whatsapp",`Mensaje enviado${tp?`: ${tp.name}`:""} (contacto rápido)`,{nextDate:addDays(todayStr(),3),nextAction:l.nextAction||"Hacer seguimiento por WhatsApp"});
     if(ok){toast(`${shortName(l.name)} registrado · siguiente`,"ok");qrNext()}else el.disabled=false;return}
 }
@@ -1032,6 +1049,7 @@ function drawerHTML(l){
     <div class="dw-sub" id="dw-sub"></div><div class="dw-quick" id="dw-quick"></div></div>
   <div class="dw-body">
     <div class="dw-alerts" id="dw-alerts" aria-live="polite"></div>
+    <div id="dw-hermes" class="dw-alerts"></div>
     <section class="sec"><div class="sec-h"><h3>Etapa</h3><span class="muted" id="dw-stage-at" style="font-size:12px"></span></div><div class="stepper" id="dw-stepper"></div>
       <div id="dw-lost" style="margin-top:10px" hidden><label class="lbl" for="dw-lostReason">Motivo</label><select id="dw-lostReason" class="inp" data-f="lostReason" data-w>${opt(LOST_REASONS,"Elige un motivo")}</select></div></section>
     <section class="sec"><div class="fgrid">
@@ -1078,6 +1096,7 @@ function renderDrawerDyn(){
   const tel=normDigits(l.phone);
   $("#dw-quick").innerHTML=`${ch==="wa"?`<button class="btn sm wa" data-act="wa" data-id="${esc(id)}">${ic("wa",14)} Escribir por WhatsApp</button>`:""}${tel?`<a class="btn sm" href="tel:+${esc(tel)}">${ic("phone",14)} Llamar</a><button class="btn sm" data-act="copy-phone" data-id="${esc(id)}">${ic("copy",14)} <span class="mono">${esc(l.phone)}</span></button>`:""}<a class="btn sm" href="${esc(mapsHref(l))}" target="_blank" rel="noopener noreferrer">${ic("map",14)} ${ch==="none"?"Buscar teléfono en Maps":"Ver en Maps"}</a>${safeUrl(l.social)?`<a class="btn sm" href="${esc(l.social)}" target="_blank" rel="noopener noreferrer">${ic("ext",14)} Redes</a>`:""}`;
   $("#dw-alerts").innerHTML=contactAlerts(l,true);
+  const hz=$("#dw-hermes");if(hz){const h=hermesHTML(l);if(hz._h!==h){hz.innerHTML=h;hz._h=h}}
   $("#dw-stepper").innerHTML=STAGES.map(s=>`<button class="step${s.id===l.stage?" on":""}" data-st="${s.id}" data-step="${s.id}" data-w ${s.id===l.stage?'aria-pressed="true"':""}>${esc(s.label)}</button>`).join("");
   $("#dw-stage-at").textContent=l.stageAt?`Desde ${rel(l.stageAt)}`:"";
   const lost=$("#dw-lost");if(lost)lost.hidden=!["perdido","descartado"].includes(l.stage);
@@ -1106,6 +1125,32 @@ function contactAlerts(l,inDrawer){
   if(l.owner&&l.owner!==meId&&!CLOSED.includes(l.stage))out.push(`<div class="dw-alert">${ic("user",16)}<div>Este contacto lo lleva <b>${esc(nameOf(l.owner))}</b>.</div></div>`);
   return out.join("");
 }
+/* What Hermes found about the business (Prospector) and the messages it drafted (Vendedor). */
+function hermesHTML(l){
+  let h="";
+  if(typeof l.hermesScore==="number"||l.hook||l.payEvidence){
+    const link=(u,t)=>safeUrl(u)?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`:esc(u);
+    const redes=[["Instagram",l.instagram],["Facebook",l.facebook],["TikTok",l.tiktok]].filter(x=>safeUrl(x[1])).map(([t,u])=>link(u,t)).join(" · ");
+    const resenas=[l.reviewsRating&&`${esc(l.reviewsRating)} ★`,l.reviewsCount&&`${esc(l.reviewsCount)} reseñas`].filter(Boolean).join(" · ");
+    const rows=[["Distrito",esc(l.district||"")],["Dirección",esc(l.address||"")],["Página web",[esc(l.webStatus||""),l.webUrl?link(l.webUrl,"ver"):""].filter(Boolean).join(" · ")],
+      ["Reseñas",resenas],["Seguidores",esc(l.followers||"")],["Anuncios activos",esc(l.adsActive||"")],["Última publicación",esc(l.lastPost||"")],
+      ["Evidencia de pago",esc(l.payEvidence||"")],["Otros teléfonos",esc(l.phoneAlt||"")],["Redes",redes],["Fuente",esc(l.hermesSource||"")],
+      ["Registrado",esc([l.hermesDate,l.hermesBatch].filter(Boolean).join(" · "))]].filter(r=>r[1]);
+    const sc=typeof l.hermesScore==="number"?leadScore(l):null;
+    h+=`<section class="sec"><div class="sec-h"><h3>Investigación del Prospector</h3>${sc?`<span class="chip pot-${sc.level}">Puntaje ${l.hermesScore}/10${l.hermesPriority?` · ${esc(l.hermesPriority)}`:""}</span>`:""}</div>
+      ${l.hook?`<div class="hook"><b>Gancho de venta:</b> ${esc(l.hook)}</div>`:""}
+      <dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></section>`;
+  }
+  const msgs=[["vMsg1","Mensaje 1","v-msg1"],["vFollow3","Seguimiento día 3","v-f3"],["vFollow7","Seguimiento día 7","v-f7"]].filter(m=>l[m[0]]);
+  if(msgs.length){
+    const wa=channel(l)==="wa";
+    h+=`<section class="sec"><div class="sec-h"><h3>Mensajes del Vendedor</h3><span class="muted" style="font-size:12px">${esc([l.vChannel&&`Canal sugerido: ${l.vChannel}`,l.vContact].filter(Boolean).join(" · "))}</span></div>
+      ${l.vPersonal?`<p class="hint" style="margin:0 0 8px">Dato usado para personalizar: ${esc(l.vPersonal)}</p>`:""}
+      ${msgs.map(([k,t,tid])=>`<div class="vmsg"><div class="vmsg-h"><b>${t}</b><span class="inline">${wa?`<button class="btn sm wa" data-act="v-wa" data-tpl="${tid}" data-w>${ic("wa",14)} Enviar</button>`:""}<button class="btn sm" data-act="v-copy" data-k="${k}">${ic("copy",14)} Copiar</button></span></div><div class="vmsg-t">${esc(l[k])}</div></div>`).join("")}
+      ${l.vEstado||l.vFechaEnvio?`<p class="hint" style="margin:8px 0 0">${esc([l.vEstado&&`Estado en el archivo del Vendedor: ${l.vEstado}`,l.vFechaEnvio&&`Fecha de envío: ${l.vFechaEnvio}`].filter(Boolean).join(" · "))}</p>`:""}</section>`;
+  }
+  return h;
+}
 function renderWaWarn(){const box=$("#wa-warn");if(!box||!S.waOpen)return;const l=S.leads.get(S.waOpen);if(l)box.innerHTML=contactAlerts(l,false)}
 function savedFlash(f,ok){const map={nextAction:"sv-next",nextDate:"sv-next",notes:"sv-notes",phone:"sv-data",contactName:"sv-data",city:"sv-data",category:"sv-data",email:"sv-data",social:"sv-data",mapsUrl:"sv-data"};const el=$("#"+(map[f]||""));if(!el)return;el.textContent=ok?"Guardado":"";el.style.color=ok?"":"var(--bad)";clearTimeout(el._t);el._t=setTimeout(()=>{el.textContent=""},1800)}
 async function commitField(f){
@@ -1124,10 +1169,10 @@ async function commitField(f){
 }
 
 /* ================= WhatsApp composer ================= */
-function openWA(id){
+function openWA(id,preTpl){
   const l=S.leads.get(id);if(!l)return;const d=normDigits(l.phone);
   if(channel(l)!=="wa"){toast("Este contacto no tiene un celular con WhatsApp.","bad");return}
-  const tpls=S.templates;let cur=tpls[0]||null;let acted=false;
+  const tpls=[...vendorTpls(l),...S.templates];let cur=tpls.find(t=>t.id===preTpl)||tpls[0]||null;let acted=false;
   S.waOpen=id;setPresence();
   const m=openModal({title:`WhatsApp · ${shortName(l.name)}`,wide:true,onClose:()=>{if(S.waOpen===id){S.waOpen=null;setPresence()}},body:`
     <div class="dw-alerts" id="wa-warn"></div>
@@ -1335,6 +1380,8 @@ document.addEventListener("click",async e=>{
   // drawer actions
   if(S.openId&&t.closest("#drawer")){
     const id=S.openId;
+    if(act==="v-copy"){const l=S.leads.get(id);if(l)copyText(l[actEl.dataset.k]||"","Mensaje copiado");return}
+    if(act==="v-wa"){openWA(id,actEl.dataset.tpl);return}
     const step=t.closest("[data-step]");if(step){changeStage(id,step.dataset.step,true);return}
     const ty=t.closest("[data-type]");if(ty){S.dwType=ty.dataset.type;renderDrawerDyn();$("#dw-log").focus();return}
     const qn=t.closest("[data-qn]");if(qn){const ta=$("#dw-log");ta.value=ta.value.trim()?ta.value.trim()+". "+qn.dataset.qn:qn.dataset.qn;ta.focus();return}

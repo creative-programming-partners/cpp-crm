@@ -185,7 +185,7 @@
       return Object.fromEntries(ids.map(id => [id, profileOf(id)]));
     },
     search: async () => [...TEAM.keys()].map(profileOf),
-    teamIds: () => [...TEAM.keys()]
+    teamIds: () => [...TEAM.values()].filter(r => r.role !== "bot").map(r => r.user_id)
   };
 
   /* ---------------- documents (live data) ---------------- */
