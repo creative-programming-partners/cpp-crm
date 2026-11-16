@@ -268,6 +268,13 @@ class Supabase:
     def delete_collection(self, col):
         self._req("DELETE", f"/rest/v1/docs?collection=eq.{col}", headers={"Prefer": "return=minimal"})
 
+    def delete_ids(self, col, ids):
+        ids = list(ids)
+        for k in range(0, len(ids), 80):
+            inlist = ",".join('"' + i.replace('"', '') + '"' for i in ids[k:k + 80])
+            self._req("DELETE", f"/rest/v1/docs?collection=eq.{col}&id=in.({urllib.parse.quote(inlist, safe=',')})",
+                      headers={"Prefer": "return=minimal"})
+
 
 class LocalDB:
     """Base de datos simulada en un archivo JSON, para probar sin tocar el CRM real."""
@@ -298,6 +305,11 @@ class LocalDB:
 
     def delete_collection(self, col):
         self.db[col] = {}
+        self._save()
+
+    def delete_ids(self, col, ids):
+        for i in ids:
+            self.db.get(col, {}).pop(i, None)
         self._save()
 
 
@@ -548,7 +560,7 @@ def import_messages(db, path):
 # ----------------------------------------------------------------- respaldo y vaciado
 def backup(db, motivo):
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    data = {col: db.list(col) for col in ("leads", "activities", "templates", "members")}
+    data = {col: db.list(col) for col in ("leads", "activities", "templates", "members", "hv_outbox", "hv_candidates", "hv_config", "hv_agent")}
     f = BACKUP_DIR / f"{dt.datetime.now():%Y-%m-%d_%H%M%S}_{motivo}.json"
     f.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     olds = sorted(BACKUP_DIR.glob("*.json"))
@@ -564,6 +576,39 @@ def vaciar_crm(db):
     db.delete_collection("activities")
     db.delete_collection("leads")
     log(f"CRM vaciado: se borraron {counts['leads']} prospectos y {counts['activities']} registros de historial. Plantillas y equipo intactos.")
+
+
+def untouched_leads(db):
+    """Google Maps contacts nobody has worked on: still 'Por contactar', never contacted, no email, no follow-up date,
+    no history, no Harvey email, no owner and never edited by the team."""
+    leads = db.list("leads")
+    refs = set()
+    for col in ("activities", "hv_outbox"):
+        for d in db.list(col).values():
+            if d.get("leadId"):
+                refs.add(d["leadId"])
+    out = []
+    for i, d in leads.items():
+        if (str(d.get("source", "")).startswith("Google Maps") and (d.get("stage") or "nuevo") == "nuevo"
+                and not d.get("lastContactAt") and not d.get("email") and not d.get("nextDate")
+                and i not in refs and not d.get("owner") and not d.get("updatedBy")):
+            out.append(i)
+    return out, len(leads)
+
+
+def limpiar_no_trabajados(db):
+    ids, total = untouched_leads(db)
+    f, counts = backup(db, "antes-de-limpiar")
+    log(f"Respaldo completo guardado en {f} ({counts['leads']} prospectos, {counts['activities']} registros de historial)")
+    db.delete_ids("leads", ids)
+    log(f"Limpieza: se borraron {len(ids)} contactos de Google Maps sin trabajar; se conservan {total - len(ids)} "
+        "(contactados, descartados, con correo o seguimiento, y los de Harvey). Historial, plantillas y equipo intactos.")
+
+
+def probar(db):
+    db.check_team()
+    ids, total = untouched_leads(db)
+    log(f"Prueba de conexión OK como usuario robot: {total} contactos en el CRM; {len(ids)} sin trabajar.")
 
 
 # ----------------------------------------------------------------- ejecución
@@ -593,7 +638,11 @@ def configurar():
     alphabet = string.ascii_letters + string.digits
     pwd = "".join(secrets.choice(alphabet) for _ in range(28))
     cred_write(ROBOT_EMAIL, pwd)
-    subprocess.run("clip", input=pwd.encode("utf-16-le"), check=True)
+    # Set-Clipboard pastes exactly what was copied (clip.exe mangles non-ANSI input)
+    subprocess.run(["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"], input=pwd.encode("ascii"), check=True)
+    user, saved = cred_read()
+    if saved != pwd:
+        raise SystemExit("No se pudo guardar la clave en el Administrador de credenciales.")
     print("Listo: se generó una clave segura para el usuario robot y quedó guardada en el")
     print("Administrador de credenciales de Windows (" + CRED_TARGET + ").")
     print("La clave también quedó COPIADA en tu portapapeles (no se muestra en pantalla).")
@@ -605,7 +654,9 @@ def main():
     ap.add_argument("--simular", metavar="DB_JSON", help="usar una base local JSON en vez del CRM real")
     ap.add_argument("--configurar", action="store_true", help="generar y guardar la clave del usuario robot")
     ap.add_argument("--vaciar-crm", action="store_true", help="respaldar y borrar todos los prospectos e historial")
-    ap.add_argument("--confirmo", action="store_true", help="confirmación obligatoria para --vaciar-crm")
+    ap.add_argument("--limpiar-no-trabajados", action="store_true", help="respaldar y borrar los contactos de Google Maps sin trabajar")
+    ap.add_argument("--probar", action="store_true", help="probar la conexión del usuario robot, sin cambiar nada")
+    ap.add_argument("--confirmo", action="store_true", help="confirmación obligatoria para borrar")
     ap.add_argument("--estado", action="store_true", help="mostrar archivos procesados")
     a = ap.parse_args()
     if a.configurar:
@@ -617,10 +668,13 @@ def main():
     with Lock():
         try:
             db = LocalDB(a.simular) if a.simular else Supabase()
-            if a.vaciar_crm:
+            if a.probar:
+                probar(db)
+                return
+            if a.vaciar_crm or a.limpiar_no_trabajados:
                 if not a.confirmo:
-                    raise SystemExit("Para vaciar el CRM agrega --confirmo (se hace un respaldo antes).")
-                vaciar_crm(db)
+                    raise SystemExit("Para borrar agrega --confirmo (se hace un respaldo antes).")
+                vaciar_crm(db) if a.vaciar_crm else limpiar_no_trabajados(db)
                 return
             run(db)
         except Exception as e:

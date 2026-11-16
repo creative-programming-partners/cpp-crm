@@ -57,5 +57,16 @@ Abre `http://localhost:8766/test.html` e inicia sesión con `darnell@test.com` /
 
 OpenStreetMap no tiene todos los negocios ni trae reseñas: por eso las estrellas se anotan a mano después de ver el negocio en Maps.
 
+## Importador Hermes (automático, en la PC de Darnell)
+`importador/importador_hermes.py` carga en el CRM lo que dejan los agentes de Hermes Desktop. No toca nada de Hermes y solo lee sus Excel.
+
+- **Prospector** (`Documents\CPP\prospectos\AAAA-MM-DD_rubro_distrito.xlsx`): cada fila es un contacto nuevo con origen "Hermes · Prospector", e incluye distrito, redes, web, reseñas, puntaje 0–10 y gancho. Si el negocio ya estaba (mismo nombre y distrito, o mismo teléfono), solo se completan los datos. Los lotes se acumulan.
+- **Vendedor** (`Documents\CPP\mensajes\AAAA-MM-DD_mensajes.xlsx`): se busca el contacto por nombre y distrito y se le agregan los mensajes sugeridos (primer mensaje y seguimientos a 3 y 7 días). La etapa solo avanza, nunca retrocede. En la ficha aparecen en "Mensajes del Vendedor" y en Contacto rápido salen como plantillas.
+- Se ignoran los archivos `PRUEBA_*` y `~$*`, los que siguen guardándose y los ya procesados (si un archivo cambia, se vuelve a procesar).
+- Corre solo con la tarea **CPP CRM - Importador Hermes** del Programador de tareas, al iniciar sesión y cada 10 minutos. Para instalarla otra vez: `powershell -ExecutionPolicy Bypass -File importador\instalar_tarea.ps1`.
+- Entra al CRM como el usuario robot `hermes@cppcstudio.com`. Su clave está en el Administrador de credenciales de Windows (`CPP-CRM-Hermes`) y no se escribe en ningún archivo. Para cambiarla: `python importador\importador_hermes.py --configurar`, y después pon la misma clave en Supabase → Authentication → Users.
+- Registro, respaldos y estado: `Documents\CPP\crm-importador\` (`logs\importador.log`, `respaldos\`, `estado.json`). Antes de cualquier borrado o importación se guarda un respaldo JSON completo.
+- Otros comandos: `--probar` (prueba la conexión), `--estado` (archivos procesados), `--simular db.json` (prueba sin tocar la base real), `--limpiar-no-trabajados --confirmo` (borra los contactos de Google Maps que nadie trabajó).
+
 ## Respaldo
 Desde **Contactos → Exportar** se descarga todo en Excel. Hazlo una vez por semana y guárdalo en Drive: es la copia de seguridad más simple.
