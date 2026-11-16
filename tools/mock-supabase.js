@@ -4,7 +4,7 @@
   const wait = ms => new Promise(r => setTimeout(r, ms));
   const DB = { docs: new Map(), team: new Map() };
   for (const [collection, id, data] of (window.__SEED__ || [])) DB.docs.set(collection + "|" + id, { collection, id, data, updated_at: "2026-11-01T12:00:00Z" });
-  [["u_darnell", "darnell@test.com", "Darnell Vásquez", "admin"], ["u_jose", "jose@test.com", "José Santana", "member"], ["u_juan", "juan@test.com", "Juan Flores", "member"]]
+  [["u_darnell", "darnell@test.com", "Darnell Cuba", "admin"], ["u_jose", "jose@test.com", "José Santana", "member"], ["u_juan", "juan@test.com", "Juan Flores", "member"]]
     .forEach(([user_id, email, name, role]) => DB.team.set(user_id, { user_id, email, name, color: null, role }));
   const USERS = { "darnell@test.com": { id: "u_darnell", email: "darnell@test.com" }, "intruso@test.com": { id: "u_x", email: "intruso@test.com" } };
   const listeners = [], authCbs = [];

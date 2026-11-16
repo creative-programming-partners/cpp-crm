@@ -2,8 +2,7 @@
 .DS_Store
 Thumbs.db
 test.html
-.claude/
-
-.vercel
-__pycache__/
 test-hermes.html
+.claude/
+__pycache__/
+agente/.env
